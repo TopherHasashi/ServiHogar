@@ -1,0 +1,30 @@
+/* This file contains custom styles for the web page, allowing for additional styling beyond what Bootstrap provides. */
+
+body {
+    background-color: #f8f9fa;
+    font-family: Arial, sans-serif;
+}
+
+h1 {
+    color: #343a40;
+    text-align: center;
+    margin-top: 20px;
+}
+
+p {
+    color: #6c757d;
+    text-align: center;
+    margin: 10px 0;
+}
+
+h3 {
+    color: #007bff;
+    text-align: center;
+    margin: 15px 0;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
