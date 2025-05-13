@@ -32,7 +32,7 @@ def crear_usuario(request):
         correo = data.get('correo')
         tipo = data.get('tipo')
 
-        # guardado en tu modelo Django (User, Cliente, Trabajador, etc.)
+        # guardado en el modelo Django (User, Cliente, Trabajador, etc.)
         print(f'✅ Usuario verificado con UID: {uid}, correo: {correo}, tipo: {tipo}')
 
         return JsonResponse({'mensaje': 'Usuario creado correctamente'})
