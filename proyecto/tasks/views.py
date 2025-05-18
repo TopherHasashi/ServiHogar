@@ -16,6 +16,15 @@ def home_view(request):
 def registro_view(request):
     return render(request, 'signup.html')
 
+def limpieza_view(request):
+    return render(request, 'limpieza.html')
+
+def categorias_view(request):
+    return render(request, 'categorias.html')
+
+def maestros_view(request):
+    return render(request, 'maestros.html')
+
 @csrf_exempt  #
 def crear_usuario(request):
     if request.method != 'POST':
