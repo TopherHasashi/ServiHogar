@@ -1,4 +1,4 @@
-#!F:\ServiHogar\proyecto\env\Scripts\python.exe
+#!d:\github\servihogar\proyecto\env\scripts\python.exe
 # -*- coding: utf-8 -*-
 # Copyright 2025 Google LLC
 #
