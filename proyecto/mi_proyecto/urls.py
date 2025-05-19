@@ -25,4 +25,5 @@ urlpatterns = [
     path('categorias/', views.categorias_view, name='categorias'),
     path('limpieza/', views.limpieza_view, name='limpieza'),
     path('maestros/', views.maestros_view, name='maestros'),
+    path('login/', views.login_view, name='login')
 ]

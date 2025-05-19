@@ -48,3 +48,6 @@ def categorias_view(request):
 
 def maestros_view(request):
     return render(request, 'maestros.html')
+
+def login_view(request):
+    return render(request, 'login.html')
