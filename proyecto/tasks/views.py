@@ -39,3 +39,15 @@ def crear_usuario(request):
     except Exception as e:
         print(f'❌ Error: {e}')
         return JsonResponse({'error': str(e)}, status=400)
+
+def limpieza_view(request):
+    return render(request, 'limpieza.html')
+
+def categorias_view(request):
+    return render(request, 'categorias.html')
+
+def maestros_view(request):
+    return render(request, 'maestros.html')
+
+def login_view(request):
+    return render(request, 'login.html')
