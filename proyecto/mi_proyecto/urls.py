@@ -22,4 +22,7 @@ urlpatterns = [
     path('', views.home_view , name='home'),  # ruta raíz
     path('signup/', views.registro_view, name='registro'),
     path('api/crear_usuario/', views.crear_usuario, name='crear_usuario'),
+    path('categorias/', views.categorias_view, name='categorias'),
+    path('limpieza/', views.limpieza_view, name='limpieza'),
+    path('maestros/', views.maestros_view, name='maestros'),
 ]
