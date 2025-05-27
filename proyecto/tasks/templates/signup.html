@@ -50,6 +50,8 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
     import { getAuth, createUserWithEmailAndPassword, sendEmailVerification } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-firestore.js";
+
 
     const firebaseConfig = {
     apiKey: "AIzaSyAwjwOh4bjRM3ZtRyV-bGssJ5TCEcRR69c",
@@ -63,6 +65,7 @@
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
+    const db = getFirestore(app);
 
     document.getElementById('registroForm').addEventListener('submit', async function (e) {
       e.preventDefault();
@@ -73,29 +76,46 @@
       const tipo = document.getElementById('tipo').value;
       const mensaje = document.getElementById('mensaje');
 
-      try {
-        const userCredential = await createUserWithEmailAndPassword(auth, correo, password);
-        await sendEmailVerification(userCredential.user);
-        const token = await userCredential.user.getIdToken();
+    try {
+  const userCredential = await createUserWithEmailAndPassword(auth, correo, password);
+  await sendEmailVerification(userCredential.user);
 
-        const res = await fetch('/api/crear_usuario/', {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + token,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ nombre, correo, tipo })
-        });
+  const user = userCredential.user;
 
-        const data = await res.json();
-        mensaje.innerText = data.mensaje || "Usuario registrado con éxito. Revisa tu correo.";
-        mensaje.className = "text-success";
+  // 🔥 Guardar en Firestore
+  await setDoc(doc(db, "usuarios", user.uid), {
+    uid: user.uid,
+    nombre: nombre,
+    correo: correo,
+    tipo: tipo,
+    creado: new Date().toISOString()
+  });
 
-      } catch (error) {
-        mensaje.innerText = "Error: " + error.message;
-        mensaje.className = "text-danger";
-        console.error(error);
-      }
+    // 🔐 Enviar a Django si usas backend también
+  const token = await user.getIdToken();
+  const res = await fetch('/api/crear_usuario/', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ nombre, correo, tipo })
+  });
+
+  const data = await res.json();
+  mensaje.innerText = data.mensaje || "Usuario registrado con éxito. Revisa tu correo.";
+  mensaje.className = "text-success";
+
+  // Redirigir automáticamente
+  setTimeout(() => {
+    window.location.href = "/dashboard/";  // Cambia esto por la página a la que quieras llevar al usuario
+  }, 1500);
+
+} catch (error) {
+  mensaje.innerText = "Error: " + error.message;
+  mensaje.className = "text-danger";
+  console.error(error);
+}
     });
   </script>
 </body>
