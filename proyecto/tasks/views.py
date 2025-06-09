@@ -5,6 +5,8 @@ from django.views.decorators.csrf import csrf_exempt
 import json
 from firebase_admin import credentials, auth
 import firebase_admin
+from django.contrib.auth.decorators import login_required
+
 
 
 cred = credentials.Certificate("firebase_key.json")
@@ -54,3 +56,12 @@ def login_view(request):
 
 def dashboard_view(request):
     return render(request, 'dashboard.html')
+
+def perfil_view(request):
+    return render(request, 'perfil.html')
+
+@login_required
+def chat_view(request, receiver_uid):
+    return render(request, "chat/chat.html", {
+        "receiver_uid": receiver_uid
+    })

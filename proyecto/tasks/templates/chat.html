@@ -1,0 +1,72 @@
+<!-- chat/chat.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Chat</title>
+</head>
+<body>
+  <h2>Chat Privado</h2>
+  <div>
+    <h3>Conversando con: <span id="chatWith"></span></h3>
+    <div id="messages" style="height: 300px; overflow-y: scroll; border: 1px solid #ccc;"></div>
+    <input id="messageInput" type="text" placeholder="Escribe un mensaje..."/>
+    <button onclick="sendMessage()">Enviar</button>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, query, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+        apiKey: "AIzaSyAwjwOh4bjRM3ZtRyV-bGssJ5TCEcRR69c",
+        authDomain: "registrousuario-49a1c.firebaseapp.com",
+        projectId: "registrousuario-49a1c",
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let currentUser;
+    const receiverId = "{{ receiver_uid }}";  // desde Django
+    let chatId;
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        currentUser = user.uid;
+        chatId = [currentUser, receiverId].sort().join("-");
+        document.getElementById("chatWith").textContent = receiverId;
+        subscribeToMessages();
+      }
+    });
+
+    async function sendMessage() {
+      const msg = document.getElementById("messageInput").value;
+      if (!msg) return;
+      await addDoc(collection(db, "chats", chatId, "messages"), {
+        sender_id: currentUser,
+        receiver_id: receiverId,
+        text: msg,
+        timestamp: new Date()
+      });
+      document.getElementById("messageInput").value = "";
+    }
+
+    function subscribeToMessages() {
+      const q = query(collection(db, "chats", chatId, "messages"), orderBy("timestamp"));
+      onSnapshot(q, snapshot => {
+        const container = document.getElementById("messages");
+        container.innerHTML = "";
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          const msgEl = document.createElement("p");
+          msgEl.textContent = `${data.sender_id === currentUser ? "Tú" : "Ellx"}: ${data.text}`;
+          container.appendChild(msgEl);
+        });
+      });
+    }
+  </script>
+</body>
+</html>

@@ -26,6 +26,7 @@ urlpatterns = [
     path('limpieza/', views.limpieza_view, name='limpieza'),
     path('maestros/', views.maestros_view, name='maestros'),
     path('login/', views.login_view, name='login'),
-    path('dashboard/', views.dashboard_view, name='dashboard')
-
+    path('dashboard/', views.dashboard_view, name='dashboard'),
+    path('perfil/', views.perfil_view, name='perfil'),
+    path("chat/<str:receiver_uid>/", views.chat_view, name="chat"),
 ]
