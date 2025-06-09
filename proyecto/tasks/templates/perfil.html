@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Editar Perfil</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f4f4f4; }
+        .container { max-width: 400px; margin: 40px auto; background: #fff; padding: 30px 40px; border-radius: 8px; box-shadow: 0 2px 8px #ccc; }
+        h2 { text-align: center; margin-bottom: 25px; }
+        .form-group { margin-bottom: 18px; }
+        label { display: block; margin-bottom: 6px; font-weight: bold; }
+        input, textarea, select { width: 100%; padding: 8px; border: 1px solid #bbb; border-radius: 4px; }
+        button { width: 100%; padding: 12px; background: #007bff; color: #fff; border: none; border-radius: 4px; font-size: 16px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        .error { color: #d00; margin-bottom: 10px; }
+        .success { color: #080; margin-bottom: 10px; }
+    </style>
+    <!-- Firebase App (the core Firebase SDK) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-auth-compat.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h2>Editar Perfil de Usuario</h2>
+        <div id="msg"></div>
+        <form id="perfilForm" autocomplete="off">
+            <div class="form-group">
+                <label for="nombre">Nombre</label>
+                <input type="text" id="nombre" name="nombre" required>
+            </div>
+            <div class="form-group">
+                <label for="region">Región</label>
+                <select id="region" name="region" required>
+                    <option value="">Seleccione una región</option>
+                    <option value="arica_parinacota">Arica y Parinacota</option>
+                    <option value="tarapaca">Tarapacá</option>
+                    <option value="antofagasta">Antofagasta</option>
+                    <option value="atacama">Atacama</option>
+                    <option value="coquimbo">Coquimbo</option>
+                    <option value="valparaiso">Valparaíso</option>
+                    <option value="metropolitana">Región Metropolitana de Santiago</option>
+                    <option value="ohiggins">Libertador General Bernardo O'Higgins</option>
+                    <option value="maule">Maule</option>
+                    <option value="nuble">Ñuble</option>
+                    <option value="biobio">Biobío</option>
+                    <option value="araucania">La Araucanía</option>
+                    <option value="los_rios">Los Ríos</option>
+                    <option value="los_lagos">Los Lagos</option>
+                    <option value="aysen">Aysén del General Carlos Ibáñez del Campo</option>
+                    <option value="magallanes">Magallanes y de la Antártica Chilena</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="comuna">Comuna</label>
+                <select id="comuna" name="comuna" required>
+                    <option value="">Seleccione una comuna</option>
+                </select>
+            </div>
+            <script>
+                // Comunas por región
+                const comunasPorRegion = {
+                    arica_parinacota: [
+                        "Arica", "Camarones", "Putre", "General Lagos"
+                    ],
+                    tarapaca: [
+                        "Iquique", "Alto Hospicio", "Pozo Almonte", "Camiña", "Colchane", "Huara", "Pica"
+                    ],
+                    antofagasta: [
+                        "Antofagasta", "Mejillones", "Sierra Gorda", "Taltal", "Calama", "Ollagüe", "San Pedro de Atacama", "Tocopilla", "María Elena"
+                    ],
+                    atacama: [
+                        "Copiapó", "Caldera", "Tierra Amarilla", "Chañaral", "Diego de Almagro", "Vallenar", "Alto del Carmen", "Freirina", "Huasco"
+                    ],
+                    coquimbo: [
+                        "La Serena", "Coquimbo", "Andacollo", "La Higuera", "Paiguano", "Vicuña", "Illapel", "Canela", "Los Vilos", "Salamanca", "Ovalle", "Combarbalá", "Monte Patria", "Punitaqui", "Río Hurtado"
+                    ],
+                    valparaiso: [
+                        "Valparaíso", "Casablanca", "Concón", "Juan Fernández", "Puchuncaví", "Quintero", "Viña del Mar", "Isla de Pascua", "Los Andes", "Calle Larga", "Rinconada", "San Esteban", "La Ligua", "Cabildo", "Papudo", "Petorca", "Zapallar", "Quillota", "Calera", "Hijuelas", "La Cruz", "Nogales", "San Antonio", "Algarrobo", "Cartagena", "El Quisco", "El Tabo", "San Antonio", "Santo Domingo", "San Felipe", "Catemu", "Llaillay", "Panquehue", "Putaendo", "Santa María", "Quilpué", "Limache", "Olmué", "Villa Alemana"
+                    ],
+                    metropolitana: [
+                        "Cerrillos", "Cerro Navia", "Conchalí", "El Bosque", "Estación Central", "Huechuraba", "Independencia", "La Cisterna", "La Florida", "La Granja", "La Pintana", "La Reina", "Las Condes", "Lo Barnechea", "Lo Espejo", "Lo Prado", "Macul", "Maipú", "Ñuñoa", "Pedro Aguirre Cerda", "Peñalolén", "Providencia", "Pudahuel", "Quilicura", "Quinta Normal", "Recoleta", "Renca", "San Joaquín", "San Miguel", "San Ramón", "Vitacura", "Puente Alto", "Pirque", "San José de Maipo", "Colina", "Lampa", "Tiltil", "San Bernardo", "Buin", "Calera de Tango", "Paine", "Melipilla", "Alhué", "Curacaví", "María Pinto", "San Pedro", "Talagante", "El Monte", "Isla de Maipo", "Padre Hurtado", "Peñaflor"
+                    ],
+                    ohiggins: [
+                        "Rancagua", "Codegua", "Coinco", "Coltauco", "Doñihue", "Graneros", "Las Cabras", "Machalí", "Malloa", "Mostazal", "Olivar", "Peumo", "Pichidegua", "Quinta de Tilcoco", "Rengo", "Requínoa", "San Vicente", "Pichilemu", "La Estrella", "Litueche", "Marchigüe", "Navidad", "Paredones", "San Fernando", "Chépica", "Chimbarongo", "Lolol", "Nancagua", "Palmilla", "Peralillo", "Placilla", "Pumanque", "Santa Cruz"
+                    ],
+                    maule: [
+                        "Talca", "Constitución", "Curepto", "Empedrado", "Maule", "Pelarco", "Pencahue", "Río Claro", "San Clemente", "San Rafael", "Cauquenes", "Chanco", "Pelluhue", "Curicó", "Hualañé", "Licantén", "Molina", "Rauco", "Romeral", "Sagrada Familia", "Teno", "Vichuquén", "Linares", "Colbún", "Longaví", "Parral", "Retiro", "San Javier", "Villa Alegre", "Yerbas Buenas"
+                    ],
+                    nuble: [
+                        "Chillán", "Bulnes", "Chillán Viejo", "El Carmen", "Pemuco", "Pinto", "Quillón", "San Ignacio", "Yungay", "Cobquecura", "Coelemu", "Ninhue", "Portezuelo", "Quirihue", "Ránquil", "Treguaco", "San Carlos", "Coihueco", "San Fabián", "San Nicolás"
+                    ],
+                    biobio: [
+                        "Concepción", "Coronel", "Chiguayante", "Florida", "Hualqui", "Lota", "Penco", "San Pedro de la Paz", "Santa Juana", "Talcahuano", "Tomé", "Hualpén", "Lebu", "Arauco", "Cañete", "Contulmo", "Curanilahue", "Los Álamos", "Tirúa", "Los Ángeles", "Antuco", "Cabrero", "Laja", "Mulchén", "Nacimiento", "Negrete", "Quilaco", "Quilleco", "San Rosendo", "Santa Bárbara", "Tucapel", "Yumbel", "Alto Biobío"
+                    ],
+                    araucania: [
+                        "Temuco", "Carahue", "Cunco", "Curarrehue", "Freire", "Galvarino", "Gorbea", "Lautaro", "Loncoche", "Melipeuco", "Nueva Imperial", "Padre Las Casas", "Perquenco", "Pitrufquén", "Pucón", "Saavedra", "Teodoro Schmidt", "Toltén", "Vilcún", "Villarrica", "Cholchol", "Angol", "Collipulli", "Curacautín", "Ercilla", "Lonquimay", "Los Sauces", "Lumaco", "Purén", "Renaico", "Traiguén", "Victoria"
+                    ],
+                    los_rios: [
+                        "Valdivia", "Corral", "Lanco", "Los Lagos", "Máfil", "Mariquina", "Paillaco", "Panguipulli", "La Unión", "Futrono", "Lago Ranco", "Río Bueno"
+                    ],
+                    los_lagos: [
+                        "Puerto Montt", "Calbuco", "Cochamó", "Fresia", "Frutillar", "Los Muermos", "Llanquihue", "Maullín", "Puerto Varas", "Castro", "Ancud", "Chonchi", "Curaco de Vélez", "Dalcahue", "Puqueldón", "Queilén", "Quellón", "Quemchi", "Quinchao", "Osorno", "Puerto Octay", "Purranque", "Puyehue", "Río Negro", "San Juan de la Costa", "San Pablo", "Chaitén", "Futaleufú", "Hualaihué", "Palena"
+                    ],
+                    aysen: [
+                        "Coyhaique", "Lago Verde", "Aysén", "Cisnes", "Guaitecas", "Cochrane", "O'Higgins", "Tortel", "Chile Chico", "Río Ibáñez"
+                    ],
+                    magallanes: [
+                        "Punta Arenas", "Laguna Blanca", "Río Verde", "San Gregorio", "Cabo de Hornos", "Antártica", "Porvenir", "Primavera", "Timaukel", "Natales", "Torres del Paine"
+                    ]
+                };
+
+                const regionSelect = document.getElementById('region');
+                const comunaSelect = document.getElementById('comuna');
+
+                regionSelect.addEventListener('change', function() {
+                    const region = this.value;
+                    comunaSelect.innerHTML = '<option value="">Seleccione una comuna</option>';
+                    if (comunasPorRegion[region]) {
+                        comunasPorRegion[region].forEach(comuna => {
+                            const option = document.createElement('option');
+                            option.value = comuna;
+                            option.textContent = comuna;
+                            comunaSelect.appendChild(option);
+                        });
+                    }
+                });
+            </script>
+            <div class="form-group">
+                <label for="tipo_servicio">Tipo de Servicio</label>
+                <select id="tipo_servicio" name="tipo_servicio" required>
+                    <option value="">Seleccione un tipo</option>
+                    <option value="limpieza">Limpieza</option>
+                    <option value="gasfiter">Gasfiter</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="servicio">Nombre del Servicio</label>
+                <input type="text" id="servicio" name="servicio" required>
+            </div>
+            <div class="form-group">
+                <label for="descripcion">Descripción</label>
+                <textarea id="descripcion" name="descripcion" rows="4" required></textarea>
+            </div>
+            <div class="form-group">
+                <label for="precio">Precio</label>
+                <input type="number" id="precio" name="precio" min="0" step="0.01" required>
+            </div>
+            <button type="submit">Guardar Cambios</button>
+        </form>
+    </div>
+    <script>
+        // Configura tu Firebase aquí
+        const firebaseConfig = {
+            apiKey: "AIzaSyAwjwOh4bjRM3ZtRyV-bGssJ5TCEcRR69c",
+            authDomain: "registrousuario-49a1c.firebaseapp.com",
+            projectId: "registrousuario-49a1c",
+            storageBucket: "registrousuario-49a1c.firebasestorage.app",
+            messagingSenderId: "459096702108",
+            appId: "1:459096702108:web:7874c1194fb30836ba0159",
+            measurementId: "G-FP2WT4DCLJ"
+        };
+        // Inicializa Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+
+        // Mapeo de valores de región a su texto con mayúsculas
+        const regionTextMap = {
+            arica_parinacota: "Arica y Parinacota",
+            tarapaca: "Tarapacá",
+            antofagasta: "Antofagasta",
+            atacama: "Atacama",
+            coquimbo: "Coquimbo",
+            valparaiso: "Valparaíso",
+            metropolitana: "Región Metropolitana de Santiago",
+            ohiggins: "Libertador General Bernardo O'Higgins",
+            maule: "Maule",
+            nuble: "Ñuble",
+            biobio: "Biobío",
+            araucania: "La Araucanía",
+            los_rios: "Los Ríos",
+            los_lagos: "Los Lagos",
+            aysen: "Aysén del General Carlos Ibáñez del Campo",
+            magallanes: "Magallanes y de la Antártica Chilena"
+        };
+
+        // Autocompletar input de nombre y cargar datos del servicio si existen
+        auth.onAuthStateChanged(async function(user) {
+            if (user) {
+                let nombreUsuario = user.displayName;
+                if (!nombreUsuario) {
+                    try {
+                        const doc = await db.collection('usuarios').doc(user.uid).get();
+                        if (doc.exists && doc.data().nombre) {
+                            nombreUsuario = doc.data().nombre;
+                        }
+                    } catch (e) {
+                        // Ignorar error
+                    }
+                }
+                if (nombreUsuario) {
+                    const nombreInput = document.getElementById('nombre');
+                    if (nombreInput && !nombreInput.value) {
+                        nombreInput.value = nombreUsuario;
+                    }
+                }
+
+                // Cargar datos del servicio si existen
+                try {
+                    const servicioDoc = await db.collection('servicios').doc(user.uid).get();
+                    if (servicioDoc.exists) {
+                        const data = servicioDoc.data();
+                        // Buscar el value de la región a partir del texto guardado (si corresponde)
+                        let regionValue = data.region;
+                        // Si el valor guardado es el texto, buscar el value correspondiente
+                        if (regionValue && !regionTextMap[regionValue] && Object.values(regionTextMap).includes(regionValue)) {
+                            // Buscar la key cuyo valor es igual al texto guardado
+                            for (const [key, val] of Object.entries(regionTextMap)) {
+                                if (val === regionValue) {
+                                    regionValue = key;
+                                    break;
+                                }
+                            }
+                        }
+                        document.getElementById('region').value = regionValue || '';
+                        document.getElementById('region').dispatchEvent(new Event('change'));
+                        setTimeout(() => {
+                            document.getElementById('comuna').value = data.comuna || '';
+                        }, 100);
+                        document.getElementById('tipo_servicio').value = data.tipo_servicio || '';
+                        document.getElementById('servicio').value = data.servicio || '';
+                        document.getElementById('descripcion').value = data.descripcion || '';
+                        document.getElementById('precio').value = data.precio !== undefined ? data.precio : '';
+                    } else {
+                        document.getElementById('region').value = '';
+                        document.getElementById('region').dispatchEvent(new Event('change'));
+                        setTimeout(() => {
+                            document.getElementById('comuna').value = '';
+                        }, 100);
+                        document.getElementById('tipo_servicio').value = '';
+                        document.getElementById('servicio').value = '';
+                        document.getElementById('descripcion').value = '';
+                        document.getElementById('precio').value = '';
+                    }
+                } catch (e) {
+                    document.getElementById('region').value = '';
+                    document.getElementById('region').dispatchEvent(new Event('change'));
+                    setTimeout(() => {
+                        document.getElementById('comuna').value = '';
+                    }, 100);
+                    document.getElementById('tipo_servicio').value = '';
+                    document.getElementById('servicio').value = '';
+                    document.getElementById('descripcion').value = '';
+                    document.getElementById('precio').value = '';
+                }
+            }
+        });
+
+        document.getElementById('perfilForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const msgDiv = document.getElementById('msg');
+            msgDiv.textContent = '';
+            msgDiv.className = '';
+            const nombre = document.getElementById('nombre').value.trim();
+            const regionValue = document.getElementById('region').value;
+            const region = regionTextMap[regionValue] || ''; // Guardar el texto con mayúsculas
+            const comuna = document.getElementById('comuna').value;
+            const tipo_servicio = document.getElementById('tipo_servicio').value;
+            const servicio = document.getElementById('servicio').value.trim();
+            const descripcion = document.getElementById('descripcion').value.trim();
+            const precio = parseFloat(document.getElementById('precio').value);
+
+            if (!nombre || !region || !comuna || !tipo_servicio || !servicio || !descripcion || isNaN(precio)) {
+                msgDiv.textContent = 'Por favor, completa todos los campos correctamente.';
+                msgDiv.className = 'error';
+                return;
+            }
+
+            try {
+                const user = auth.currentUser;
+                if (!user) {
+                    msgDiv.textContent = 'Debes iniciar sesión para editar tu perfil.';
+                    msgDiv.className = 'error';
+                    return;
+                }
+                await db.collection('servicios').doc(user.uid).set({
+                    nombre,
+                    region, // Ahora guarda el texto con mayúsculas
+                    comuna,
+                    tipo_servicio,
+                    servicio,
+                    descripcion,
+                    precio,
+                    userId: user.uid,
+                    actualizado: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                msgDiv.textContent = 'Perfil actualizado correctamente.';
+                msgDiv.className = 'success';
+            } catch (err) {
+                msgDiv.textContent = 'Error al guardar: ' + err.message;
+                msgDiv.className = 'error';
+            }
+        });
+    </script>
+</body>
+</html>
