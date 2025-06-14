@@ -205,6 +205,7 @@
   
 </script>
 
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script>
   // Configura tu Firebase aquí
   const firebaseConfig = {
@@ -216,12 +217,117 @@
       appId: "1:459096702108:web:7874c1194fb30836ba0159",
       measurementId: "G-FP2WT4DCLJ"
   };
-  // Inicializa Firebase
-  firebase.initializeApp(firebaseConfig);
+  // Inicializa Firebase solo si no está inicializado
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
   const db = firebase.firestore();
 
   let serviciosData = [];
+  // Variable global para el usuario autenticado
+  let usuarioActual = null;
+  // Escucha el estado de autenticación
+  firebase.auth().onAuthStateChanged(function(user) {
+    usuarioActual = user;
+  });
+  // Devuelve las fechas reservadas para un servicio específico
+  async function obtenerFechasReservadas(nombre, servicio) {
+    const snapshot = await db.collection('reservas')
+      .where('nombreProveedor', '==', nombre)
+      .where('servicio', '==', servicio)
+      .get();
+    const fechas = [];
+    snapshot.forEach(doc => {
+      if (doc.data().fecha) {
+        fechas.push(doc.data().fecha);
+      }
+    });
+    return fechas;
+  }
+  // Intercepta el despliegue del calendario para bloquear fechas reservadas y mostrar advertencia si se selecciona una fecha ocupada
+  document.addEventListener('click', async function(e) {
+    if (e.target && e.target.matches('button[data-bs-toggle="collapse"]')) {
+      const btn = e.target;
+      const cardBody = btn.closest('.card-body');
+      if (!cardBody) return;
+      const nombre = cardBody.querySelector('ul li strong').nextSibling.textContent.trim();
+      const servicio = cardBody.querySelector('.card-title').textContent.trim();
+      const inputId = 'fechaReserva' + nombre.replace(/\s+/g, '') + servicio.replace(/\s+/g, '');
+      const inputFecha = document.getElementById(inputId);
+      if (!inputFecha) return;
 
+      // Crea o busca el mensaje de error
+      let errorMsg = inputFecha.parentNode.querySelector('.fecha-no-disponible');
+      if (!errorMsg) {
+        errorMsg = document.createElement('div');
+        errorMsg.className = 'fecha-no-disponible text-danger mt-1';
+        errorMsg.style.display = 'none';
+        errorMsg.textContent = 'Fecha no disponible para este servicio.';
+        inputFecha.parentNode.insertBefore(errorMsg, inputFecha.nextSibling);
+      }
+
+      const fechasReservadas = await obtenerFechasReservadas(nombre, servicio);
+
+      const minDate = new Date().toISOString().split('T')[0];
+      inputFecha.min = minDate;
+
+      const maxDate = new Date();
+      maxDate.setFullYear(maxDate.getFullYear() + 1);
+      inputFecha.max = maxDate.toISOString().split('T')[0];
+
+      // Buscar el botón reservar relacionado
+      const btnReservar = inputFecha.parentNode.querySelector('button.btn-success');
+      if (btnReservar) btnReservar.disabled = true;
+
+      function mostrarErrorFecha(mostrar) {
+        if (mostrar) {
+          inputFecha.classList.add('is-invalid');
+          errorMsg.style.display = '';
+        } else {
+          inputFecha.classList.remove('is-invalid');
+          errorMsg.style.display = 'none';
+        }
+      }
+
+      function actualizarEstadoBoton() {
+        if (
+          inputFecha.value &&
+          !fechasReservadas.includes(inputFecha.value)
+        ) {
+          if (btnReservar) btnReservar.disabled = false;
+        } else {
+          if (btnReservar) btnReservar.disabled = true;
+        }
+      }
+
+      inputFecha.addEventListener('input', function() {
+        if (fechasReservadas.includes(this.value)) {
+          this.setCustomValidity('Esta fecha ya está reservada para este servicio.');
+          this.value = '';
+          mostrarErrorFecha(true);
+        } else {
+          this.setCustomValidity('');
+          mostrarErrorFecha(false);
+        }
+        actualizarEstadoBoton();
+      });
+
+      inputFecha.addEventListener('change', function() {
+        if (fechasReservadas.includes(this.value)) {
+          this.setCustomValidity('Esta fecha ya está reservada para este servicio.');
+          this.value = '';
+          mostrarErrorFecha(true);
+        } else {
+          this.setCustomValidity('');
+          mostrarErrorFecha(false);
+        }
+        actualizarEstadoBoton();
+      });
+
+      // Inicializa el estado del botón al abrir el calendario
+      actualizarEstadoBoton();
+    }
+  });
   // Renderiza las tarjetas de servicios
   function renderServicios(servicios) {
     const row = document.querySelector('.row');
@@ -244,7 +350,17 @@
               <li><strong>Región:</strong> ${data.region || ''}</li>
             </ul>
             <div class="border border-success rounded p-2 mb-3 text-success fw-bold">Precio: $${data.precio || ''}</div>
-            <a href="#" class="btn btn-primary">Solicitar</a>
+            <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCalendario${data.nombre.replace(/\s+/g, '')}${data.servicio.replace(/\s+/g, '')}" aria-expanded="false" aria-controls="collapseCalendario${data.nombre.replace(/\s+/g, '')}${data.servicio.replace(/\s+/g, '')}">
+              Solicitar
+            </button>
+            <div class="collapse mt-3" id="collapseCalendario${data.nombre.replace(/\s+/g, '')}${data.servicio.replace(/\s+/g, '')}">
+              <div class="card card-body">
+                <label for="fechaReserva${data.nombre.replace(/\s+/g, '')}${data.servicio.replace(/\s+/g, '')}" class="form-label">Selecciona una fecha:</label>
+                <input type="date" class="form-control mb-2" id="fechaReserva${data.nombre.replace(/\s+/g, '')}${data.servicio.replace(/\s+/g, '')}" min="${new Date().toISOString().split('T')[0]}">
+                <button class="btn btn-success" onclick="reservarFecha('${data.nombre}', '${data.servicio}', 'fechaReserva${data.nombre.replace(/\s+/g, '')}${data.servicio.replace(/\s+/g, '')}', '${data.descripcion}', '${data.comuna}', '${data.region}', '${data.precio}')">Reservar</button>
+                <div class="mt-2 text-success d-none" id="reservaMsg${data.nombre.replace(/\s+/g, '')}${data.servicio.replace(/\s+/g, '')}">¡Reserva realizada!</div>
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -299,10 +415,100 @@
     renderServicios(copia);
   }
 
-  document.getElementById('searchInput').addEventListener('keyup', function(e) {
-    if (e.key === 'Enter') buscarServicios();
-  });
+  // Al reservar, intenta obtener el nombre real del usuario desde la colección 'usuarios'
+  async function obtenerNombreUsuario(uid) {
+    try {
+      const doc = await db.collection('usuarios').doc(uid).get();
+      if (doc.exists && doc.data().nombre) {
+        return doc.data().nombre;
+      }
+    } catch (e) {
+      console.error('Error obteniendo nombre de usuario:', e);
+    }
+    return null;
+  }
 
+  // Modifica reservarFecha para usar el nombre real del usuario si existe
+  async function reservarFecha(nombre, servicio, inputFechaId, descripcion, comuna, region, precio) {
+    const fecha = document.getElementById(inputFechaId).value;
+    if (!fecha) {
+      alert('Por favor selecciona una fecha válida.');
+      return;
+    }
+
+    const user = usuarioActual;
+    if (!user) {
+      alert('Debes iniciar sesión para reservar.');
+      return;
+    }
+    let userId = user.uid;
+    let nombreUsuario = await obtenerNombreUsuario(userId) || user.displayName || user.email || 'Usuario';
+
+    // Busca el userId del proveedor en la colección de servicios por nombre y servicio
+    let proveedorId = null;
+    try {
+      const snapshot = await db.collection('servicios')
+        .where('nombre', '==', nombre)
+        .where('servicio', '==', servicio)
+        .limit(1)
+        .get();
+      if (!snapshot.empty) {
+        proveedorId = snapshot.docs[0].data().userId || null;
+      }
+    } catch (error) {
+      console.error('Error buscando proveedor:', error);
+    }
+    // Evita que el usuario reserve su propio servicio
+    if (proveedorId && proveedorId === userId) {
+      // Busca el input de fecha y muestra un mensaje en rojo
+      const inputFecha = document.getElementById(inputFechaId);
+      if (inputFecha) {
+        let errorMsg = inputFecha.parentNode.querySelector('.propio-servicio-msg');
+        if (!errorMsg) {
+          errorMsg = document.createElement('div');
+          errorMsg.className = 'propio-servicio-msg text-danger mt-1';
+          errorMsg.textContent = 'No puedes reservar una fecha de tu propio servicio.';
+          inputFecha.parentNode.insertBefore(errorMsg, inputFecha.nextSibling);
+        }
+        errorMsg.style.display = '';
+        inputFecha.classList.add('is-invalid');
+      }
+      return;
+    } else {
+      // Si el mensaje existe de antes, lo ocultamos
+      const inputFecha = document.getElementById(inputFechaId);
+      if (inputFecha) {
+        let errorMsg = inputFecha.parentNode.querySelector('.propio-servicio-msg');
+        if (errorMsg) errorMsg.style.display = 'none';
+        inputFecha.classList.remove('is-invalid');
+      }
+    }
+    db.collection('reservas').add({
+      nombreUsuario: nombreUsuario,
+      estado: "pendiente",
+      userId: userId,
+      nombreProveedor: nombre,
+      proveedorId: proveedorId,
+      servicio: servicio,
+      descripcion: descripcion,
+      comuna: comuna,
+      region: region,
+      precio: precio,
+      fecha: fecha,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp()
+    })
+    .then(() => {
+      const msg = document.getElementById('reservaMsg' + nombre.replace(/\s+/g, '') + servicio.replace(/\s+/g, ''));
+      if (msg) {
+        msg.classList.remove('d-none');
+        setTimeout(() => msg.classList.add('d-none'), 3000);
+      }
+    })
+    .catch((error) => {
+      console.error('Error al reservar:', error);
+      alert('Error al realizar la reserva. Inténtalo de nuevo más tarde.');
+    });
+  }
   // Cargar servicios al iniciar
   window.addEventListener('DOMContentLoaded', cargarServicios);
 </script>

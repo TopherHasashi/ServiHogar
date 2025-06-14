@@ -29,4 +29,5 @@ urlpatterns = [
     path('dashboard/', views.dashboard_view, name='dashboard'),
     path('perfil/', views.perfil_view, name='perfil'),
     path("chat/<str:receiver_uid>/", views.chat_view, name="chat"),
+    path('pendientes/', views.pendientes_view, name='pendientes'),
 ]
