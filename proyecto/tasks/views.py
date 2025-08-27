@@ -65,3 +65,6 @@ def chat_view(request, receiver_uid):
     return render(request, "chat/chat.html", {
         "receiver_uid": receiver_uid
     })
+
+def pendientes_view(request):
+    return render(request, 'pendientes.html')
