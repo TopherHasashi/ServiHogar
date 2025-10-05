@@ -1,0 +1,64 @@
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { createBrowserRouter, RouterProvider, Outlet, useNavigate } from 'react-router-dom'
+import './index.css'
+import App from './App.tsx'
+import Header from './components/Header'
+import Footer from './components/Footer'
+import ServiciosPage from './pages/Servicios'
+import ComoFuncionaPage from './pages/ComoFunciona'
+import ResenasPage from './pages/Resenas'
+import ContactoPage from './pages/Contacto'
+import TerminosPage from './pages/Terminos'
+import PrivacidadPage from './pages/Privacidad'
+import NotFoundPage from './pages/NotFound'
+import LoginPage from './pages/Login'
+import RegisterPage from './pages/Register'
+import { AuthProvider } from './lib/auth'
+
+function Layout() {
+  const navigate = useNavigate()
+  return (
+    <div className="min-h-screen flex flex-col">
+      <Header
+        onAllServicesClick={() => navigate('/servicios')}
+        onHowItWorksClick={() => navigate('/como-funciona')}
+        onReviewsClick={() => navigate('/resenas')}
+        onContactClick={() => navigate('/contacto')}
+        onUserClick={() => navigate('/login')}
+        onLogoClick={() => navigate('/')}
+      />
+      <main className="flex-1">
+        <Outlet />
+      </main>
+      <Footer />
+    </div>
+  )
+}
+
+const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <Layout />,
+    children: [
+      { index: true, element: <App /> },
+  { path: 'servicios', element: <ServiciosPage /> },
+  { path: 'como-funciona', element: <ComoFuncionaPage /> },
+  { path: 'resenas', element: <ResenasPage /> },
+  { path: 'login', element: <LoginPage /> },
+  { path: 'register', element: <RegisterPage /> },
+  { path: 'contacto', element: <ContactoPage /> },
+  { path: 'terminos', element: <TerminosPage /> },
+  { path: 'privacidad', element: <PrivacidadPage /> },
+  { path: '*', element: <NotFoundPage /> },
+    ],
+  },
+])
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
+  </StrictMode>,
+)
