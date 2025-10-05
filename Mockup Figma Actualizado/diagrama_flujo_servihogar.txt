@@ -1,0 +1,396 @@
+DIAGRAMA DE FLUJO - PLATAFORMA SERVIHOGAR
+=========================================
+
+[INICIO] --> Usuario accede a la plataforma
+    |
+    v
+[VISTA PÚBLICA] - Landing Page Principal
+├── Header Navigation
+├── Hero Section
+├── Servicios (Gasfitería, Limpieza, Jardinería)
+├── Beneficios
+├── Proceso
+├── CTA Profesionales
+├── Testimonios
+├── FAQ
+├── Contacto
+└── Footer
+    |
+    ├─── [TODOS LOS SERVICIOS] ──┐
+    |         |                  |
+    |         ├── Ver profesionales disponibles
+    |         ├── Filtrar por región/comuna
+    |         ├── Filtrar por género/edad
+    |         ├── Ver perfiles profesionales
+    |         └── "Volver al Inicio" ──┘
+    |
+    ├─── [RESEÑAS DE CLIENTES] ──┐
+    |         |                   |
+    |         ├── Ver testimonios públicos
+    |         ├── Leer experiencias detalladas
+    |         └── "Volver al Inicio" ──┘
+    |
+    ├─── [PÁGINAS INSTITUCIONALES] ──┐
+    |         |                       |
+    |         ├── [ACERCA DE NOSOTROS] ──┐
+    |         ├── [CÓMO FUNCIONA] ────────┤
+    |         ├── [ÚNETE COMO PROFESIONAL]─┤
+    |         ├── [TÉRMINOS Y CONDICIONES]─┤
+    |         └── [POLÍTICA DE PRIVACIDAD]─┤
+    |                                      |
+    |         Todas redirigen ──────────────┘
+    |                  |
+    |                  └─── "Volver al Inicio"
+    |
+    └─── [MI CUENTA] - Botón flotante
+              |
+              v
+         [AUTENTICACIÓN DE USUARIOS]
+              |
+              ├─── REGISTRO NUEVO USUARIO
+              |     |
+              |     ├── [CLIENTE]
+              |     |    ├── Nombres, Apellidos
+              |     |    ├── RUT, Email, Contraseña
+              |     |    ├── Teléfono, Género
+              |     |    ├── Región, Comuna
+              |     |    └── Dirección (OBLIGATORIO)
+              |     |          |
+              |     |          └── Registro exitoso ──┐
+              |     |                                 |
+              |     └── [PROFESIONAL]                  |
+              |          ├── Datos básicos (igual cliente)
+              |          ├── Categoría de servicio
+              |          └── Registro inicial ──────────┤
+              |                                        |
+              ├─── LOGIN USUARIO EXISTENTE              |
+              |     ├── Email + Contraseña              |
+              |     └── Login exitoso ─────────────────┤
+              |                                        |
+              ├─── RECUPERAR CONTRASEÑA                 |
+              |     ├── Ingresa email                   |
+              |     └── Envía link recuperación         |
+              |                                        |
+              ├─── LOGIN ADMINISTRADOR                  |
+              |     ├── Credenciales admin              |
+              |     └── ──┐                            |
+              |            |                           |
+              └─── LOGIN VERIFICADOR                    |
+                    ├── Credenciales verificador        |
+                    └── ──┐                            |
+                           |                           |
+                           |                           v
+                           |                    [DASHBOARD USUARIO]
+                           |                           |
+                           |            ┌──────────────┴──────────────┐
+                           |            |                             |
+                           |            v                             |
+                           |     [TAB: BÚSQUEDA DE SERVICIOS]        |
+                           |            |                             |
+                           |            ├── Ver categorías           |
+                           |            ├── Filtrar por ubicación    |
+                           |            ├── Filtrar por demografía   |
+                           |            ├── Ver perfiles profesionales
+                           |            └── [RESERVAR SERVICIO] ──┐   |
+                           |                     |                |   |
+                           |                     ├── Seleccionar fecha/hora
+                           |                     ├── Definir duración |
+                           |                     ├── Proporcionar detalles
+                           |                     ├── Ver precio total|
+                           |                     └── Confirmar ─────┤   |
+                           |                                        |   |
+                           |            [TAB: MIS SOLICITUDES] ─────┤   |
+                           |                     |                  |   |
+                           |                     ├── Ver por estado |   |
+                           |                     ├── Seguimiento    |   |
+                           |                     ├── Cancelar (si pendiente)
+                           |                     ├── [PAGAR SERVICIO MercadoPago]
+                           |                     |    ├── Tarjeta crédito/débito
+                           |                     |    ├── Procesamiento
+                           |                     |    └── Confirmación ─┤   |
+                           |                     └── [CALIFICAR SERVICIO]   |
+                           |                          ├── Solo si "Completado"
+                           |                          ├── Estrellas 1-5|   |
+                           |                          ├── Comentario  |   |
+                           |                          ├── Calificaciones específicas
+                           |                          └── Publicar ───┤   |
+                           |                                        |   |
+                           |            [TAB: MI PERFIL] ───────────┤   |
+                           |                     |                  |   |
+                           |                     ├── Editar datos   |   |
+                           |                     ├── Cambiar contraseña |
+                           |                     ├── Ver historial  |   |
+                           |                     └── Configuraciones|   |
+                           |                                        |   |
+                           |            [TAB: PANEL PROFESIONAL] ───┤   |
+                           |              (Solo si es profesional) |   |
+                           |                     |                  |   |
+                           |                     ├── [COMPLETAR PERFIL PROFESIONAL]
+                           |                     |    ├── Años experiencia |
+                           |                     |    ├── Descripción servicios
+                           |                     |    ├── Duración (fija/rango)
+                           |                     |    └── Precio por hora ──┤   |
+                           |                     |                         |   |
+                           |                     ├── [SUBIR DOCUMENTOS VERIFICACIÓN]
+                           |                     |    ├── Cédula de identidad |
+                           |                     |    ├── Antecedentes (OBLIGATORIO/ROJO)
+                           |                     |    ├── Certificados      |   |
+                           |                     |    └── Estado: Pendiente/Aprobado/Rechazado
+                           |                     |                         |   |
+                           |                     ├── [GESTIONAR HORARIOS SEMANALES]
+                           |                     |    ├── Lunes a Domingo  |   |
+                           |                     |    ├── Hora inicio/fin  |   |
+                           |                     |    └── Disponibilidad ──┤   |
+                           |                     |                         |   |
+                           |                     ├── [SOLICITUDES RECIBIDAS]  |
+                           |                     |    ├── Ver pendientes   |   |
+                           |                     |    ├── Confirmar/Rechazar   |
+                           |                     |    ├── Marcar "Iniciado"|   |
+                           |                     |    ├── Marcar "Completado" |
+                           |                     |    └── Ver historial ───┤   |
+                           |                     |                         |   |
+                           |                     ├── [MIS RESEÑAS RECIBIDAS]  |
+                           |                     |    ├── Ver calificaciones   |
+                           |                     |    ├── Responder comentarios
+                           |                     |    └── Ver estadísticas─┤   |
+                           |                     |                         |   |
+                           |                     └── [MIS GANANCIAS]       |   |
+                           |                          ├── Total acumulado  |   |
+                           |                          ├── Por período      |   |
+                           |                          └── Estado pagos ────┤   |
+                           |                                              |   |
+                           |               [CERRAR SESIÓN] ───────────────┘   |
+                           |                     |                             |
+                           |                     └─── Volver a [VISTA PÚBLICA] |
+                           |                                                   |
+                           └─── [PANEL ADMINISTRADOR] ────────────────────────┤
+                                          |                                   |
+                                          ├── [DASHBOARD PRINCIPAL]           |
+                                          |    ├── Métricas generales        |
+                                          |    ├── Usuarios registrados       |
+                                          |    ├── Servicios completados      |
+                                          |    └── Ingresos totales           |
+                                          |                                   |
+                                          ├── [GESTIÓN DE USUARIOS]          |
+                                          |    ├── Lista completa usuarios    |
+                                          |    ├── Filtrar por rol/estado     |
+                                          |    ├── Activar/Desactivar         |
+                                          |    ├── Cambiar roles              |
+                                          |    └── Ver perfiles completos     |
+                                          |                                   |
+                                          ├── [GESTIÓN DE SERVICIOS]         |
+                                          |    ├── Ver todas las solicitudes  |
+                                          |    ├── Intervenir en disputas     |
+                                          |    ├── Procesar reembolsos        |
+                                          |    └── Resolver problemas         |
+                                          |                                   |
+                                          ├── [GESTIÓN CATEGORÍAS]           |
+                                          |    ├── Crear nuevas categorías    |
+                                          |    ├── Editar existentes          |
+                                          |    └── Activar/Desactivar         |
+                                          |                                   |
+                                          ├── [REPORTES Y ANALYTICS]         |
+                                          |    ├── Exportar datos usuarios    |
+                                          |    ├── Reportes transacciones     |
+                                          |    ├── Métricas de uso            |
+                                          |    └── Análisis financieros       |
+                                          |                                   |
+                                          ├── [CONFIGURACIONES SISTEMA]      |
+                                          |    ├── Precios mínimos            |
+                                          |    ├── Duraciones máximas         |
+                                          |    ├── Porcentajes comisión       |
+                                          |    └── Configuraciones generales  |
+                                          |                                   |
+                                          ├── [NOTIFICACIONES MASIVAS]       |
+                                          |    ├── Crear anuncios             |
+                                          |    ├── Enviar a segmentos         |
+                                          |    └── Historial enviados         |
+                                          |                                   |
+                                          ├── [LOGS Y AUDITORÍA]             |
+                                          |    ├── Registro de acciones       |
+                                          |    ├── Seguimiento cambios        |
+                                          |    └── Análisis actividad         |
+                                          |                                   |
+                                          └── [CERRAR SESIÓN ADMIN] ──────────┤
+                                                                             |
+                                                                             |
+                           ┌── [PANEL VERIFICADOR] ──────────────────────────┘
+                           |            |
+                           |            ├── [DASHBOARD VERIFICACIÓN]
+                           |            |    ├── Profesionales pendientes
+                           |            |    ├── Ordenados por fecha
+                           |            |    └── Métricas verificación
+                           |            |
+                           |            ├── [REVISAR PROFESIONALES]
+                           |            |    ├── Lista pendientes
+                           |            |    └── Seleccionar profesional ─┐
+                           |            |                                 |
+                           |            └── [PROCESO VERIFICACIÓN] ←──────┘
+                           |                 |
+                           |                 ├── [REVISAR DOCUMENTOS]
+                           |                 |    ├── Visualizar PDF/imágenes
+                           |                 |    ├── Cédula de identidad
+                           |                 |    ├── Antecedentes criminales
+                           |                 |    ├── Certificados profesionales
+                           |                 |    └── Documentos experiencia
+                           |                 |
+                           |                 ├── [DECISIÓN POR DOCUMENTO]
+                           |                 |    ├── [APROBAR] ──┐
+                           |                 |    |    └── Marca como aprobado
+                           |                 |    └── [RECHAZAR] ─┐
+                           |                 |         ├── Proporcionar razón específica
+                           |                 |         └── Notificar al profesional
+                           |                 |
+                           |                 ├── [VERIFICACIÓN COMPLETA]
+                           |                 |    ├── Todos documentos aprobados
+                           |                 |    ├── Marcar "Profesional Verificado"
+                           |                 |    └── Habilitar para recibir solicitudes
+                           |                 |
+                           |                 └── [SUSPENDER PROFESIONAL]
+                           |                      ├── Por reportes/problemas
+                           |                      ├── Documentar razón
+                           |                      └── Deshabilitar servicios
+                           |
+                           └── [CERRAR SESIÓN VERIFICADOR]
+                                     |
+                                     └─── Volver a [VISTA PÚBLICA]
+
+
+FLUJOS DE NOTIFICACIONES (Transversales):
+==========================================
+
+[SISTEMA NOTIFICACIONES] - Ejecuta en paralelo
+    |
+    ├── Para CLIENTES:
+    |    ├── Profesional confirma/rechaza solicitud
+    |    ├── Servicio iniciado/completado
+    |    ├── Recordatorio de pago
+    |    ├── Solicitud de calificación
+    |    └── Confirmaciones por email
+    |
+    ├── Para PROFESIONALES:
+    |    ├── Nueva solicitud recibida
+    |    ├── Documento aprobado/rechazado
+    |    ├── Verificación completa
+    |    ├── Nueva reseña recibida
+    |    └── Pago procesado
+    |
+    ├── Para ADMINISTRADORES:
+    |    ├── Nuevos registros
+    |    ├── Disputas reportadas
+    |    ├── Problemas de pago
+    |    └── Métricas diarias
+    |
+    └── Para VERIFICADORES:
+         ├── Nuevos profesionales pendientes
+         ├── Documentos re-subidos
+         └── Reportes sobre profesionales
+
+
+ESTADOS DE DATOS PRINCIPALES:
+============================
+
+SOLICITUDES DE SERVICIO:
+- Pendiente → Confirmado → En Progreso → Completado
+- Pendiente → Rechazado (por profesional)
+- Cualquier estado → Cancelado (por cliente/admin)
+- Completado → En Disputa (si hay problemas)
+
+VERIFICACIÓN PROFESIONAL:
+- Pendiente → En Revisión → Aprobado/Rechazado
+- Aprobado → Suspendido (por problemas)
+- Rechazado → Re-subido (nuevo ciclo)
+
+PAGOS:
+- Pendiente → En Proceso → Aprobado → Pagado
+- Pendiente → Rechazado
+- Pagado → Reembolsado (si es necesario)
+
+DOCUMENTOS:
+- Subido → Pendiente → Aprobado/Rechazado
+- Rechazado → Re-subido (nuevo ciclo)
+
+
+NAVEGACIÓN FLOTANTE (Disponible en todas las vistas):
+====================================================
+
+Vista Pública:
+- Botón "Mi Cuenta" (Usuario) → Ir a Autenticación
+
+Vistas Secundarias:
+- Botón "Volver al Inicio" (Casa) → Regresar a Vista Pública
+
+Panel Admin/Verificador:
+- Botón "Ir al Inicio" → Regresar a Vista Pública
+
+Dashboard Usuario:
+- Navegación interna por tabs
+- Cerrar sesión → Regresar a Vista Pública
+
+
+INTEGRACIONES EXTERNAS:
+======================
+
+MERCADOPAGO:
+- Procesar pagos tarjeta crédito/débito
+- Generar preferencias de pago
+- Webhooks para confirmaciones
+- Gestión de reembolsos
+
+SISTEMA DE ARCHIVOS:
+- Subida de documentos profesionales
+- Validación de formatos (PDF, JPG, PNG)
+- Límite de tamaño (5MB)
+- Almacenamiento seguro
+
+EMAIL:
+- Confirmaciones de registro
+- Recuperación de contraseñas
+- Notificaciones importantes
+- Comprobantes de pago
+
+
+RESPONSIVE DESIGN:
+=================
+
+MÓVIL (Prioritario):
+- Navegación optimizada
+- Botones flotantes
+- Interfaces touch-friendly
+- Formularios adaptativos
+
+TABLET/DESKTOP:
+- Expansión de contenido
+- Múltiples columnas
+- Hover effects
+- Menús desplegables
+
+
+SEGURIDAD:
+==========
+
+AUTENTICACIÓN:
+- Hash de contraseñas
+- Validación RUT chileno
+- Emails únicos
+- Sesiones seguras
+
+AUTORIZACIÓN:
+- Roles diferenciados (Cliente, Profesional, Admin, Verificador)
+- Permisos granulares
+- Protección de rutas
+- Validación de acceso
+
+DATOS:
+- Encriptación información sensible
+- Validación entrada datos
+- Protección CSRF
+- Logs de auditoría
+
+
+======================================
+TOTAL FLUJOS: 15 flujos principales
+TOTAL ESTADOS: 45+ estados diferentes
+TOTAL VISTAS: 12 vistas principales
+TOTAL ROLES: 4 roles de usuario
+======================================

@@ -1,0 +1,265 @@
+PLATAFORMA DE SERVICIOS PARA EL HOGAR - REQUERIMIENTOS FUNCIONALES
+
+================================================================================
+SISTEMA GENERAL
+================================================================================
+
+RF01: El sistema debe permitir el acceso público a la plataforma sin autenticación
+- Descripción: Los usuarios pueden navegar por la landing page, ver servicios disponibles, testimonios, FAQ y páginas institucionales
+- Incluye: Hero, servicios, beneficios, proceso, testimonios, contacto, acerca de nosotros, cómo funciona, términos y condiciones, política de privacidad
+
+RF02: El sistema debe implementar navegación flotante responsive
+- Descripción: Botones flotantes de navegación que se adapten a dispositivos móviles y de escritorio
+- Funcionalidades: Botón home, botón de cuenta de usuario, acceso rápido entre vistas
+
+RF03: El sistema debe gestionar múltiples tipos de vista y autenticación
+- Descripción: Manejo de vistas públicas, administrativas, de verificación y de usuario
+- Estados: Vista pública, admin autenticado, verificador autenticado, usuario autenticado
+
+================================================================================
+ROL USUARIO CLIENTE
+================================================================================
+
+RF04: El sistema debe permitir el registro de usuarios clientes
+- Descripción: Registro con datos personales completos
+- Campos obligatorios: Nombres, apellidos, RUT, dirección, email, contraseña, teléfono, género, fecha de nacimiento
+- Validaciones: RUT válido, email único, contraseña segura
+
+RF05: El sistema debe permitir el inicio de sesión de usuarios clientes
+- Descripción: Autenticación con email y contraseña
+- Funcionalidades: Recordar sesión, recuperación de contraseña
+
+RF06: El sistema debe permitir buscar profesionales y servicios
+- Descripción: Motor de búsqueda con múltiples filtros
+- Filtros disponibles: Tipo de servicio (gasfitería, limpieza, jardinería), región, comuna, rango de precios, calificación mínima, género del profesional, rango de edad del profesional
+- Resultados: Lista de profesionales con información básica, calificaciones, precios y disponibilidad
+
+RF07: El sistema debe mostrar información detallada de profesionales
+- Descripción: Perfil completo del profesional seleccionado
+- Incluye: Datos personales, servicios ofrecidos, calificaciones, reseñas, experiencia, precios, horarios de disponibilidad, galería de trabajos
+
+RF08: El sistema debe permitir realizar reservas de servicios
+- Descripción: Sistema de reservas completo con selección de fecha, hora y detalles
+- Proceso: Selección de fecha disponible, selección de horario, ingreso de dirección del servicio, descripción del trabajo, solicitudes especiales
+- Confirmación: Resumen de la reserva antes de confirmar
+
+RF09: El sistema debe integrar sistema de pagos con MercadoPago
+- Descripción: Procesamiento de pagos seguros para las reservas
+- Funcionalidades: Múltiples métodos de pago, confirmación de transacción, recibos digitales
+
+RF10: El sistema debe permitir gestionar solicitudes de servicios
+- Descripción: Panel de control de todas las reservas del usuario
+- Estados de solicitud: Pendiente, confirmada, en progreso, completada, cancelada
+- Acciones: Ver detalles, cancelar (si aplica), contactar profesional
+
+RF11: El sistema debe permitir calificar y reseñar servicios completados
+- Descripción: Sistema de calificaciones de 1 a 5 estrellas con comentarios
+- Obligatoriedad: Solo disponible para servicios completados
+- Campos: Calificación numérica, comentario detallado, recomendación (sí/no)
+
+RF12: El sistema debe permitir gestionar perfil de usuario cliente
+- Descripción: Edición de información personal y preferencias
+- Campos editables: Datos personales, dirección, teléfono, preferencias de contacto
+- Funcionalidades: Cambio de contraseña, eliminación de cuenta
+
+RF13: El sistema debe mostrar historial de servicios solicitados
+- Descripción: Registro completo de todas las transacciones del usuario
+- Información: Fecha, profesional, servicio, costo, estado, calificación otorgada
+
+================================================================================
+ROL USUARIO PROFESIONAL/TRABAJADOR
+================================================================================
+
+RF14: El sistema debe permitir el registro de usuarios profesionales
+- Descripción: Registro con datos personales y profesionales
+- Campos obligatorios: Datos personales completos + información profesional inicial
+
+RF15: El sistema debe permitir crear perfil profesional completo
+- Descripción: Perfil detallado con múltiples servicios
+- Información incluida: Descripción general, experiencia, documentación, verificaciones
+
+RF16: El sistema debe permitir gestionar múltiples servicios por profesional
+- Descripción: Cada profesional puede ofrecer hasta 3 servicios diferentes
+- Servicios disponibles: Gasfitería, limpieza del hogar, jardinería
+- Configuración por servicio: Precio fijo, duración (fija o rango), descripción específica, experiencia en el área
+
+RF17: El sistema debe permitir habilitar/deshabilitar servicios
+- Descripción: Control de disponibilidad por servicio sin eliminación permanente
+- Estados: Activo, inactivo
+- Restricción: No se pueden eliminar servicios, solo deshabilitar
+
+RF18: El sistema debe permitir gestión avanzada de horarios por servicio
+- Descripción: Sistema de agenda independiente para cada servicio ofrecido
+- Niveles de horarios:
+  * Horario general: Plantilla semanal base
+  * Horarios personalizados: Períodos específicos con horarios diferentes
+  * Días no disponibles: Fechas completamente bloqueadas
+
+RF19: El sistema debe permitir crear períodos personalizados de horario
+- Descripción: Horarios especiales para fechas específicas que sobrescriben el horario general
+- Funcionalidades: Crear período con nombre, rango de fechas, horario semanal personalizado
+- Ejemplos de uso: "Enero: 9-14h", "Verano: Solo lunes y miércoles", "Semana especial: horario extendido"
+
+RF20: El sistema debe permitir gestionar disponibilidad mensual
+- Descripción: Calendario mensual para marcar días no disponibles
+- Funcionalidades: Selección individual de días, selección de semanas completas, selección de mes completo
+- Razones: Vacaciones, enfermedad, eventos personales, capacitaciones
+
+RF21: El sistema debe implementar jerarquía de horarios
+- Descripción: Sistema de prioridades para determinar disponibilidad
+- Jerarquía: 1. Días no disponibles (máxima prioridad) → 2. Horarios personalizados por período → 3. Horario general (por defecto)
+
+RF22: El sistema debe permitir subir documentación para verificación
+- Descripción: Sistema diferenciado de verificación de documentos
+- Documentos por única vez: Certificado de antecedentes penales
+- Documentos por servicio: Documentación de experiencia específica para cada nuevo servicio
+
+RF23: El sistema debe permitir gestionar solicitudes de trabajo recibidas
+- Descripción: Panel de control de todas las solicitudes de clientes
+- Acciones: Aceptar, rechazar, ver detalles del trabajo, contactar cliente
+- Estados: Nueva, aceptada, en progreso, completada
+
+RF24: El sistema debe permitir gestionar perfil y configuraciones
+- Descripción: Edición de información profesional
+- Campos editables: Descripción general, experiencia, precios, horarios, datos de contacto
+- Configuraciones: Aceptar nuevos trabajos (sí/no), radio de cobertura
+
+RF25: El sistema debe mostrar estadísticas y ganancias
+- Descripción: Dashboard con métricas de desempeño
+- Métricas: Calificación promedio, total de trabajos, ganancias totales por servicio, trabajos completados por mes
+
+================================================================================
+ROL ADMINISTRADOR
+================================================================================
+
+RF26: El sistema debe permitir autenticación de administradores
+- Descripción: Acceso seguro al panel administrativo
+- Credenciales: Email y contraseña de administrador
+
+RF27: El sistema debe permitir gestión completa de usuarios
+- Descripción: CRUD completo de usuarios clientes y profesionales
+- Funcionalidades: Ver listado, buscar, editar, suspender, eliminar, ver historial de actividad
+
+RF28: El sistema debe permitir gestión de servicios del sistema
+- Descripción: Administración de categorías y tipos de servicios
+- Funcionalidades: Crear nuevas categorías, editar existentes, habilitar/deshabilitar servicios
+
+RF29: El sistema debe permitir gestión de solicitudes de servicios
+- Descripción: Monitoreo y administración de todas las transacciones
+- Funcionalidades: Ver todas las solicitudes, filtrar por estado, intervenir en disputas, generar reportes
+
+RF30: El sistema debe permitir gestión de profesionales
+- Descripción: Administración específica de usuarios profesionales
+- Funcionalidades: Aprobar/rechazar registros, gestionar verificaciones, suspender cuentas, revisar documentación
+
+RF31: El sistema debe permitir configuración del sistema
+- Descripción: Configuraciones generales de la plataforma
+- Parámetros: Comisiones, tarifas, configuraciones de pago, parámetros de búsqueda, regiones disponibles
+
+RF32: El sistema debe generar reportes y estadísticas
+- Descripción: Dashboard administrativo con métricas del negocio
+- Reportes: Usuarios activos, transacciones, ganancias, profesionales por región, servicios más solicitados
+
+================================================================================
+ROL VERIFICADOR
+================================================================================
+
+RF33: El sistema debe permitir autenticación de verificadores
+- Descripción: Acceso específico para personal de verificación
+- Credenciales: Email y contraseña de verificador
+
+RF34: El sistema debe mostrar cola de verificaciones pendientes
+- Descripción: Lista priorizada de documentos por verificar
+- Información: Profesional, tipo de documento, fecha de envío, prioridad
+
+RF35: El sistema debe permitir revisar documentación de profesionales
+- Descripción: Interface para examinar documentos subidos
+- Tipos de documentos: Cédula de identidad, certificado de antecedentes, documentación de experiencia, títulos profesionales
+
+RF36: El sistema debe diferenciar tipos de verificación
+- Descripción: Manejo diferenciado según el tipo de solicitud
+- Primera solicitud: Requiere certificado de antecedentes + documentación de experiencia
+- Servicios adicionales: Solo requiere documentación de experiencia del nuevo servicio
+
+RF37: El sistema debe permitir aprobar o rechazar verificaciones
+- Descripción: Decisiones sobre documentación revisada
+- Acciones: Aprobar, rechazar con motivo, solicitar documentación adicional
+- Comentarios: Razones de rechazo, observaciones, recomendaciones
+
+RF38: El sistema debe notificar decisiones de verificación
+- Descripción: Comunicación automática a profesionales sobre resultados
+- Notificaciones: Aprobación exitosa, rechazo con motivos, solicitud de documentos adicionales
+
+================================================================================
+FUNCIONALIDADES TRANSVERSALES
+================================================================================
+
+RF39: El sistema debe implementar sistema de regiones y comunas de Chile
+- Descripción: Cobertura geográfica completa del país
+- Regiones incluidas: Todas las regiones de Chile con sus respectivas comunas principales
+- Funcionalidades: Filtrado por ubicación, asignación automática, búsqueda por proximidad
+
+RF40: El sistema debe implementar sistema de calificaciones y reseñas
+- Descripción: Sistema completo de feedback entre usuarios
+- Calificaciones: Escala de 1 a 5 estrellas, comentarios detallados, fechas de servicio
+- Visibilidad: Públicas para todos los usuarios, filtrado por relevancia
+
+RF41: El sistema debe manejar formato de duración en horas
+- Descripción: Visualización consistente de duraciones de servicios
+- Formato: Horas y minutos (1h, 1h30min, 2h) en lugar de solo minutos
+- Aplicación: Búsqueda de servicios, perfiles de profesionales, reservas
+
+RF42: El sistema debe implementar sistema de notificaciones
+- Descripción: Comunicación automática para eventos importantes
+- Tipos: Confirmación de reservas, cambios de estado, recordatorios, mensajes del sistema
+- Canales: Email, notificaciones in-app
+
+RF43: El sistema debe garantizar responsividad completa
+- Descripción: Experiencia optimizada para todos los dispositivos
+- Dispositivos: Móviles, tablets, desktop
+- Funcionalidades: Navegación adaptativa, elementos táctiles optimizados, contenido escalable
+
+RF44: El sistema debe implementar búsqueda avanzada con múltiples filtros
+- Descripción: Motor de búsqueda robusto para encontrar profesionales
+- Filtros: Servicio, ubicación, precio, calificación, género, edad, disponibilidad
+- Resultados: Ordenamiento por relevancia, distancia, precio, calificación
+
+RF45: El sistema debe manejar estados de servicios profesionales
+- Descripción: Control granular del estado de cada servicio ofrecido por profesionales
+- Estados: Activo/Inactivo, Verificado/No verificado, Disponible/No disponible
+- Restricciones: No eliminación permanente, solo cambios de estado
+
+RF46: El sistema debe implementar sistema de precios fijos
+- Descripción: Modelo de precios transparente sin negociación
+- Configuración: Precio fijo por servicio, visible antes de la reserva
+- Moneda: Pesos chilenos (CLP) con formato local
+
+RF47: El sistema debe permitir gestión de disponibilidad por selección rápida
+- Descripción: Herramientas eficientes para gestionar períodos largos de disponibilidad
+- Funcionalidades: Selección de mes completo, selección de semanas, selección de días individuales
+- Casos de uso: Vacaciones, cambios estacionales, eventos especiales
+
+================================================================================
+RESTRICCIONES Y VALIDACIONES
+================================================================================
+
+RF48: El sistema debe validar datos de entrada
+- RUT chileno válido con dígito verificador
+- Emails únicos en el sistema
+- Contraseñas seguras (mínimo 8 caracteres, mayúsculas, números)
+- Fechas coherentes (nacimiento, disponibilidad)
+
+RF49: El sistema debe mantener integridad de datos
+- No eliminación de servicios profesionales (solo deshabilitación)
+- Preservación de historial de transacciones
+- Mantenimiento de relaciones entre entidades
+
+RF50: El sistema debe implementar seguridad apropiada
+- Autenticación segura para todos los roles
+- Protección de datos personales
+- Encriptación de información sensible
+- Sesiones seguras con timeout automático
+
+================================================================================
+TOTAL: 50 REQUERIMIENTOS FUNCIONALES
+================================================================================

@@ -1,0 +1,141 @@
+MATRIZ RACI GENERAL - PLATAFORMA SERVIHOGAR
+==========================================
+
+FORMATO EXCEL: Módulos || Revisar || Aprobado || Consultor || Informar
+
+ROLES:
+- MR = Matias Reuque (Scrum Master)
+- JS = Juan Silva (Product Owner)
+
+MÓDULOS PRINCIPALES || REVISAR || APROBADO || CONSULTOR || INFORMAR
+==================================================================
+
+Vista Pública y Landing Page || MR || JS || JS || MR
+Sistema de Autenticación || MR || JS || MR || JS
+Dashboard de Usuario || MR || JS || JS || MR
+Panel Administrativo || MR || JS || MR || JS
+Panel de Verificador || MR || JS || MR || JS
+Páginas Institucionales || MR || JS || JS || MR
+Sistema de Base de Datos || MR || JS || MR || JS
+Integraciones Externas || MR || JS || MR || JS
+Experiencia de Usuario (UX/UI) || MR || JS || JS || MR
+Seguridad y Validaciones || MR || JS || MR || JS
+
+GESTIÓN DE PROYECTO || REVISAR || APROBADO || CONSULTOR || INFORMAR
+==================================================================
+
+Planificación de Sprints || MR || MR || JS || JS
+Gestión del Product Backlog || JS || JS || MR || MR
+Historias de Usuario || MR || JS || JS || MR
+Documentación Técnica || MR || JS || MR || JS
+Reportes de Progreso || MR || JS || JS || MR
+Stakeholder Management || JS || JS || MR || MR
+
+DESARROLLO Y TÉCNICO || REVISAR || APROBADO || CONSULTOR || INFORMAR
+===================================================================
+
+Arquitectura del Sistema || MR || JS || MR || JS
+Desarrollo Frontend || MR || MR || JS || JS
+Desarrollo Backend || MR || MR || JS || JS
+Testing y QA || MR || MR || JS || JS
+Code Review || MR || MR || JS || JS
+Performance y Optimización || MR || JS || MR || JS
+
+PRODUCTO Y NEGOCIO || REVISAR || APROBADO || CONSULTOR || INFORMAR
+=================================================================
+
+Definición de Funcionalidades || MR || JS || JS || MR
+Priorización de Features || JS || JS || MR || MR
+Análisis de Requerimientos || JS || JS || MR || MR
+Feedback de Usuario || MR || JS || JS || MR
+Métricas de Producto || JS || JS || MR || MR
+Roadmap de Producto || JS || JS || MR || MR
+
+CALIDAD Y TESTING || REVISAR || APROBADO || CONSULTOR || INFORMAR
+================================================================
+
+Estrategia de Testing || MR || MR || JS || JS
+Pruebas de Funcionalidad || MR || MR || JS || JS
+Pruebas de Integración || MR || MR || JS || JS
+Control de Calidad || MR || JS || MR || JS
+Bug Tracking y Resolución || MR || MR || JS || JS
+Testing de Usabilidad || MR || JS || JS || MR
+
+DESPLIEGUE Y OPERACIONES || REVISAR || APROBADO || CONSULTOR || INFORMAR
+=======================================================================
+
+Configuración de Ambientes || MR || JS || MR || JS
+Deployment a Producción || MR || JS || MR || JS
+Monitoring y Logs || MR || JS || MR || JS
+Backup y Recuperación || MR || JS || MR || JS
+Mantenimiento del Sistema || MR || MR || JS || JS
+Soporte Técnico || MR || JS || MR || JS
+
+COMUNICACIÓN || REVISAR || APROBADO || CONSULTOR || INFORMAR
+===========================================================
+
+Comunicación con Cliente || JS || JS || MR || MR
+Reuniones de Equipo || MR || MR || JS || JS
+Reportes de Estado || MR || JS || JS || MR
+Documentación de Proyecto || MR || JS || MR || JS
+Presentaciones de Demo || MR || JS || JS || MR
+Gestión de Cambios || JS || JS || MR || MR
+
+===================================
+TOTAL MÓDULOS GENERALES: 38
+
+DISTRIBUCIÓN DE RESPONSABILIDADES:
+
+MATIAS REUQUE (MR) - SCRUM MASTER:
+- REVISAR: 38 módulos (100% - Responsable de ejecución)
+- APROBADO: 18 módulos técnicos y de proceso
+- CONSULTOR: 18 módulos técnicos críticos
+- INFORMAR: 20 módulos de producto y negocio
+
+JUAN SILVA (JS) - PRODUCT OWNER:
+- REVISAR: 0 módulos (enfoque en producto)
+- APROBADO: 20 módulos de producto y negocio
+- CONSULTOR: 20 módulos de producto y UX
+- INFORMAR: 18 módulos técnicos
+
+LEYENDA RACI:
+R (Revisar) = Responsable de ejecutar la tarea
+A (Aprobado) = Autoridad para aprobar el resultado
+C (Consultor) = Consultado antes de tomar decisiones
+I (Informar) = Informado de los resultados
+
+CRITERIOS DE ASIGNACIÓN:
+
+PRODUCT OWNER (JS):
+- Aprueba: Funcionalidades, UX, requerimientos de negocio
+- Consultor: Definición de producto y experiencia usuario
+- Informado: Aspectos técnicos y de implementación
+
+SCRUM MASTER (MR):
+- Revisa: Toda la implementación técnica y proceso
+- Aprueba: Aspectos técnicos, testing, deployment
+- Consultor: Arquitectura, seguridad, operaciones
+- Informado: Decisiones de producto y negocio
+
+RESPONSABILIDADES CLAVE:
+
+MATIAS REUQUE (Scrum Master):
+✅ Liderar implementación técnica
+✅ Asegurar calidad del código
+✅ Gestionar proceso de desarrollo
+✅ Coordinar testing y deployment
+✅ Facilitar ceremonias SCRUM
+
+JUAN SILVA (Product Owner):
+✅ Definir visión de producto
+✅ Priorizar funcionalidades
+✅ Aprobar experiencia usuario
+✅ Gestionar stakeholders
+✅ Validar entregables de negocio
+
+COLABORACIÓN REQUERIDA:
+🤝 Seguridad y validaciones
+🤝 Integraciones externas  
+🤝 Arquitectura del sistema
+🤝 Documentación técnica
+🤝 Gestión de cambios

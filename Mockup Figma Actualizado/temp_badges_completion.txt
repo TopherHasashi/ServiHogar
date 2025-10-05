@@ -1,0 +1,29 @@
+                    {priceRange && priceRange !== "all" && (
+                      <Badge variant="secondary" className="flex items-center gap-1">
+                        <Star className="w-3 h-3" />
+                        {priceRange === "low" ? "$10.000 - $20.000" : priceRange === "medium" ? "$20.000 - $30.000" : "$30.000+"}
+                        <button onClick={() => setPriceRange("")} className="ml-1 hover:bg-gray-200 rounded-full p-0.5">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    )}
+                    {selectedGender && selectedGender !== "all" && (
+                      <Badge variant="secondary" className="flex items-center gap-1">
+                        <User className="w-3 h-3" />
+                        {selectedGender === "masculino" ? "Masculino" : "Femenino"}
+                        <button onClick={() => setSelectedGender("")} className="ml-1 hover:bg-gray-200 rounded-full p-0.5">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    )}
+                    {selectedAgeRange && selectedAgeRange !== "all" && (
+                      <Badge variant="secondary" className="flex items-center gap-1">
+                        <Calendar className="w-3 h-3" />
+                        {selectedAgeRange === "18-30" ? "18-30 años" : 
+                         selectedAgeRange === "31-40" ? "31-40 años" : 
+                         selectedAgeRange === "41-50" ? "41-50 años" : "51+ años"}
+                        <button onClick={() => setSelectedAgeRange("")} className="ml-1 hover:bg-gray-200 rounded-full p-0.5">
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    )}

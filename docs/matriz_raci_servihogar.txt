@@ -1,0 +1,201 @@
+MATRIZ RACI - PLATAFORMA SERVIHOGAR
+===================================
+
+FORMATO EXCEL: Módulos || Revisar || Aprobado || Consultor || Informar
+
+ROLES:
+- MR = Matias Reuque (Scrum Master)
+- JS = Juan Silva (Product Owner)
+
+MÓDULOS PRINCIPALES || REVISAR || APROBADO || CONSULTOR || INFORMAR
+====================================================================
+
+Vista Pública - Landing Page || MR || JS || JS || MR
+Sistema de Autenticación de Usuarios || MR || JS || MR || JS
+Dashboard de Usuario Modular || MR || JS || JS || MR
+Panel Administrativo || MR || JS || JS || MR
+Panel de Verificador || MR || JS || MR || JS
+Búsqueda y Catálogo de Servicios || MR || JS || JS || MR
+Sistema de Reservas y Solicitudes || MR || JS || JS || MR
+Sistema de Pagos MercadoPago || MR || JS || MR || JS
+Sistema de Reseñas y Calificaciones || MR || JS || JS || MR
+Gestión de Profesionales || MR || JS || JS || MR
+Verificación de Documentos || MR || JS || MR || JS
+Gestión de Horarios Profesionales || MR || JS || JS || MR
+Páginas Institucionales || MR || JS || JS || MR
+Sistema de Notificaciones || MR || JS || MR || JS
+Base de Datos y Modelo Relacional || MR || JS || MR || JS
+Navegación Flotante Responsive || MR || JS || JS || MR
+
+COMPONENTES ESPECÍFICOS || REVISAR || APROBADO || CONSULTOR || INFORMAR
+======================================================================
+
+Header y Navegación Principal || MR || JS || JS || MR
+Hero Section y CTA || MR || JS || JS || MR
+Sección de Servicios || MR || JS || JS || MR
+Beneficios y Proceso || MR || JS || JS || MR
+CTA Profesionales || MR || JS || JS || MR
+Testimonios y FAQ || MR || JS || JS || MR
+Contacto y Footer || MR || JS || JS || MR
+UserDashboardModular - Componente Principal || MR || JS || JS || MR
+SearchTab - Búsqueda de Servicios || MR || JS || JS || MR
+RequestsTab - Mis Solicitudes || MR || JS || JS || MR
+ProfileTab - Mi Perfil || MR || JS || JS || MR
+ProfessionalTab - Panel Profesional || MR || JS || JS || MR
+ReviewModal - Sistema de Reseñas || MR || JS || JS || MR
+ServiceBooking - Reserva de Servicios || MR || JS || JS || MR
+ProfessionalScheduleManager || MR || JS || JS || MR
+AdminDashboardEnhanced || MR || JS || MR || JS
+VerifierDashboard || MR || JS || MR || JS
+UserAuth - Autenticación || MR || JS || MR || JS
+AllServices - Vista Todos los Servicios || MR || JS || JS || MR
+CustomerReviews - Reseñas de Clientes || MR || JS || JS || MR
+
+PÁGINAS INSTITUCIONALES || REVISAR || APROBADO || CONSULTOR || INFORMAR
+======================================================================
+
+AboutUs - Acerca de Nosotros || MR || JS || JS || MR
+HowItWorks - Cómo Funciona || MR || JS || JS || MR
+JoinAsProfessional - Únete como Profesional || MR || JS || JS || MR
+TermsConditions - Términos y Condiciones || MR || JS || MR || JS
+PrivacyPolicy - Política de Privacidad || MR || JS || MR || JS
+
+FUNCIONALIDADES ADMIN || REVISAR || APROBADO || CONSULTOR || INFORMAR
+====================================================================
+
+Gestión de Usuarios Admin || MR || JS || MR || JS
+Gestión de Profesionales Admin || MR || JS || MR || JS
+Gestión de Servicios Admin || MR || JS || MR || JS
+Solicitudes de Servicio Admin || MR || JS || MR || JS
+Reportes y Analytics || MR || JS || MR || JS
+Configuraciones del Sistema || MR || JS || MR || JS
+Logs y Auditoría || MR || JS || MR || JS
+
+INTEGRACIONES Y APIS || REVISAR || APROBADO || CONSULTOR || INFORMAR
+===================================================================
+
+Integración MercadoPago || MR || JS || MR || JS
+Sistema de Archivos y Documentos || MR || JS || MR || JS
+Sistema de Notificaciones Email || MR || JS || MR || JS
+API de Regiones y Comunas Chile || MR || JS || MR || JS
+Sistema de Geolocalización || MR || JS || MR || JS
+
+SEGURIDAD Y VALIDACIONES || REVISAR || APROBADO || CONSULTOR || INFORMAR
+========================================================================
+
+Autenticación y Autorización || MR || JS || MR || JS
+Validación de Formularios || MR || JS || JS || MR
+Encriptación de Datos || MR || JS || MR || JS
+Protección CSRF || MR || JS || MR || JS
+Validación RUT Chileno || MR || JS || JS || MR
+Verificación de Antecedentes || MR || JS || MR || JS
+
+EXPERIENCIA DE USUARIO || REVISAR || APROBADO || CONSULTOR || INFORMAR
+=====================================================================
+
+Diseño Responsive Móvil || MR || JS || JS || MR
+Navegación y UX || MR || JS || JS || MR
+Interfaz de Usuario (UI) || MR || JS || JS || MR
+Accesibilidad || MR || JS || JS || MR
+Performance y Optimización || MR || JS || MR || JS
+Estados de Carga || MR || JS || JS || MR
+
+TESTING Y CALIDAD || REVISAR || APROBADO || CONSULTOR || INFORMAR
+=================================================================
+
+Pruebas Unitarias || MR || MR || JS || JS
+Pruebas de Integración || MR || MR || JS || JS
+Pruebas End-to-End || MR || MR || JS || JS
+Control de Calidad (QA) || MR || JS || MR || JS
+Code Review || MR || MR || JS || JS
+Testing de Usabilidad || MR || JS || JS || MR
+
+DOCUMENTACIÓN || REVISAR || APROBADO || CONSULTOR || INFORMAR
+============================================================
+
+Documentación Técnica || MR || JS || MR || JS
+Guidelines de Desarrollo || MR || MR || JS || JS
+Historias de Usuario || MR || JS || JS || MR
+Diagramas de Flujo || MR || JS || MR || JS
+Modelo de Base de Datos || MR || JS || MR || JS
+Manual de Usuario || MR || JS || JS || MR
+
+DESPLIEGUE Y DEVOPS || REVISAR || APROBADO || CONSULTOR || INFORMAR
+==================================================================
+
+Configuración de Ambientes || MR || JS || MR || JS
+Deployment Production || MR || JS || MR || JS
+Monitoring y Logs || MR || JS || MR || JS
+Backup y Recuperación || MR || JS || MR || JS
+Configuración de Dominio || MR || JS || MR || JS
+SSL y Certificados || MR || JS || MR || JS
+
+ÉPICAS Y FEATURES || REVISAR || APROBADO || CONSULTOR || INFORMAR
+================================================================
+
+Épica: Gestión de Usuarios || MR || JS || JS || MR
+Épica: Sistema de Verificación || MR || JS || MR || JS
+Épica: Marketplace de Servicios || MR || JS || JS || MR
+Épica: Sistema de Pagos || MR || JS || MR || JS
+Épica: Sistema de Calificaciones || MR || JS || JS || MR
+Épica: Panel Administrativo || MR || JS || MR || JS
+Épica: Experiencia Móvil || MR || JS || JS || MR
+
+SPRINTS Y RELEASES || REVISAR || APROBADO || CONSULTOR || INFORMAR
+=================================================================
+
+Sprint Planning || MR || MR || JS || JS
+Sprint Review || MR || JS || JS || MR
+Sprint Retrospective || MR || MR || JS || JS
+Release Planning || MR || JS || JS || MR
+Product Backlog || JS || JS || MR || MR
+User Stories Prioritization || JS || JS || MR || MR
+
+STAKEHOLDER MANAGEMENT || REVISAR || APROBADO || CONSULTOR || INFORMAR
+=====================================================================
+
+Comunicación con Cliente || JS || JS || MR || MR
+Requerimientos de Negocio || JS || JS || MR || MR
+Feedback de Usuarios || MR || JS || JS || MR
+Métricas de Producto || JS || JS || MR || MR
+Roadmap de Producto || JS || JS || MR || MR
+
+MANTENIMIENTO || REVISAR || APROBADO || CONSULTOR || INFORMAR
+============================================================
+
+Bug Fixes || MR || MR || JS || JS
+Actualizaciones de Dependencias || MR || MR || JS || JS
+Optimizaciones de Performance || MR || JS || MR || JS
+Refactoring de Código || MR || MR || JS || JS
+Mejoras Continuas || MR || JS || JS || MR
+
+===================================
+TOTAL MÓDULOS: 80+ módulos/componentes
+DISTRIBUCIÓN DE RESPONSABILIDADES:
+
+MATIAS REUQUE (MR) - SCRUM MASTER:
+- REVISAR: 80+ módulos (100% cobertura)
+- APROBADO: 25 módulos técnicos críticos
+- CONSULTOR: 40 módulos técnicos
+- INFORMAR: 40 módulos de negocio
+
+JUAN SILVA (JS) - PRODUCT OWNER:
+- REVISAR: 0 módulos (foco en producto)
+- APROBADO: 55+ módulos de producto
+- CONSULTOR: 40+ módulos de negocio
+- INFORMAR: 25 módulos técnicos
+
+LEYENDA RACI:
+R (Revisar) = Responsable de ejecutar
+A (Aprobado) = Autoridad para aprobar
+C (Consultor) = Consultado antes de decisiones
+I (Informar) = Informado de resultados
+
+CRITERIOS DE ASIGNACIÓN:
+- Product Owner (JS): Aprueba funcionalidades de producto y UX
+- Scrum Master (MR): Revisa implementación técnica y proceso
+- Módulos técnicos críticos: MR como consultor principal
+- Módulos de negocio: JS como consultor principal
+- Seguridad y integraciones: Ambos como consultores
+- Testing: MR lidera, JS consultor
+- Documentación: Colaborativo según tipo
