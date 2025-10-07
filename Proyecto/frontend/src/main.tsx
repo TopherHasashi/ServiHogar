@@ -14,6 +14,10 @@ import PrivacidadPage from './pages/Privacidad'
 import NotFoundPage from './pages/NotFound'
 import LoginPage from './pages/Login'
 import RegisterPage from './pages/Register'
+import ProfesionalPage from './pages/Profesional.tsx'
+import VerificadorPage from './pages/Verificador.tsx'
+import ClientePage from './pages/Cliente'
+import AdminPage from './pages/Admin'
 import { AuthProvider } from './lib/auth'
 
 function Layout() {
@@ -47,6 +51,10 @@ const router = createBrowserRouter([
   { path: 'resenas', element: <ResenasPage /> },
   { path: 'login', element: <LoginPage /> },
   { path: 'register', element: <RegisterPage /> },
+  { path: 'profesional', element: <ProfesionalPage /> },
+  { path: 'verificador', element: <VerificadorPage /> },
+  { path: 'cliente', element: <ClientePage /> },
+  { path: 'admin', element: <AdminPage /> },
   { path: 'contacto', element: <ContactoPage /> },
   { path: 'terminos', element: <TerminosPage /> },
   { path: 'privacidad', element: <PrivacidadPage /> },

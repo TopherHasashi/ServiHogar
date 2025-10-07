@@ -36,6 +36,7 @@ interface AdminDashboardEnhancedProps {
 
 export default function AdminDashboardEnhanced({ onLogout }: AdminDashboardEnhancedProps) {
   const [searchTerm, setSearchTerm] = useState("")
+  // Removed unused selected filter state
 
   // Datos de ejemplo para gráficos
   const revenueData = [

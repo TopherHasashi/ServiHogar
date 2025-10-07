@@ -4,18 +4,16 @@ import { Button } from "../ui/button"
 import { Input } from "../ui/input"
 import { Label } from "../ui/label"
 import { Switch } from "../ui/switch"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select"
 import { Badge } from "../ui/badge"
-import { Separator } from "../ui/separator"
 import { Alert, AlertDescription } from "../ui/alert"
 import { 
-  Clock, 
+  
   Calendar, 
   Plus, 
   Trash2, 
   Save,
   CheckCircle,
-  AlertCircle
+  
 } from "lucide-react"
 
 interface TimeSlot {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Navigate } from 'react-router-dom'
 import { apiGet } from './lib/api'
+import { useAuth } from './lib/auth'
 import Hero from './components/Hero.tsx'
 import Services from './components/Services'
 import Benefits from './components/Benefits'
@@ -13,12 +14,30 @@ function App() {
   // const [count, setCount] = useState(0)
   const [apiStatus, setApiStatus] = useState<string>('...')
   const navigate = useNavigate()
+  const { user, loading } = useAuth()
 
   useEffect(() => {
     apiGet('/api/ping')
       .then((data) => setApiStatus(data?.status ?? 'unknown'))
       .catch((e) => setApiStatus(`error: ${e.message}`))
   }, [])
+
+  // Si el usuario está autenticado, redirigir a su panel según el rol
+  if (!loading && user) {
+    const role = user.effective_role
+    if (role === 'administrador') return <Navigate to="/admin" replace />
+    if (role === 'verificador') return <Navigate to="/verificador" replace />
+    if (role === 'profesional') return <Navigate to="/profesional" replace />
+    return <Navigate to="/cliente" replace />
+  }
+
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-10">
+        <p className="text-gray-600">Cargando…</p>
+      </div>
+    )
+  }
 
   return (
     <div>

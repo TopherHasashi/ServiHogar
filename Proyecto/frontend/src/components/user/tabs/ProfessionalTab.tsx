@@ -19,7 +19,7 @@ import {
   Plus,
   Upload,
   FileText,
-  AlertCircle
+  
 } from "lucide-react"
 
 interface ProfessionalTabProps {

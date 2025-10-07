@@ -2,11 +2,7 @@ import { Card, CardContent } from "./ui/card"
 import { Button } from "./ui/button"
 import { Search, Calendar, CreditCard, CheckCircle } from "lucide-react"
 
-interface ProcessProps {
-  onServiceClick?: () => void
-  onAllServicesClick?: () => void
-  onHowItWorksClick?: () => void
-}
+interface ProcessProps {}
 
 const steps = [
   {
@@ -39,7 +35,7 @@ const steps = [
   }
 ]
 
-export default function Process({ onServiceClick, onAllServicesClick, onHowItWorksClick }: ProcessProps) {
+export default function Process({}: ProcessProps) {
   return (
     <section id="proceso" className="py-12 sm:py-16 lg:py-24 bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -139,7 +135,6 @@ export default function Process({ onServiceClick, onAllServicesClick, onHowItWor
                 <Button 
                   variant="outline" 
                   size="lg" 
-                  onClick={onHowItWorksClick}
                   className="bg-white hover:bg-blue-50 border-blue-200 text-blue-700 w-full sm:w-auto"
                 >
                   Ver Información Detallada

@@ -11,28 +11,11 @@ export default function LoginPage() {
     navigate('/')
   }
 
-  const handleAdminLogin = () => {
-    console.log('Acceso de administrador')
-    // TODO: Redirigir al panel de administración
-    navigate('/')
-  }
-
-  const handleVerifierLogin = () => {
-    console.log('Acceso de verificador')
-    // TODO: Redirigir al panel de verificación
-    navigate('/')
-  }
-
   const handleBack = () => {
     navigate('/')
   }
 
   return (
-    <UserAuth
-      onLogin={handleLogin}
-      onAdminLogin={handleAdminLogin}
-      onVerifierLogin={handleVerifierLogin}
-      onBack={handleBack}
-    />
+    <UserAuth onLogin={handleLogin} onBack={handleBack} />
   )
 }

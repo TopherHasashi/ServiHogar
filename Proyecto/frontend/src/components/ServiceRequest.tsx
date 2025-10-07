@@ -6,7 +6,6 @@ import { Label } from "./ui/label"
 import { Textarea } from "./ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select"
 import { Checkbox } from "./ui/checkbox"
-import { Separator } from "./ui/separator"
 import { Badge } from "./ui/badge"
 import { 
   User, 
@@ -14,7 +13,6 @@ import {
   Phone, 
   MapPin, 
   Calendar,
-  Clock,
   Wrench,
   Sparkles,
   Scissors,
@@ -388,7 +386,7 @@ export default function ServiceRequest({ onBack, preSelectedService }: ServiceRe
                           {timeSlots.map((slot) => (
                             <SelectItem key={slot} value={slot}>
                               <div className="flex items-center gap-2">
-                                <Clock className="w-4 h-4" />
+                                <Calendar className="w-4 h-4" />
                                 {slot}
                               </div>
                             </SelectItem>
