@@ -100,3 +100,9 @@ docker compose down
 
 ---
 Cualquier mejora (scripts de backup/restore de DB, linters, pre-commit, etc.) se pueden agregar cuando el equipo lo necesite.
+
+## Autenticación (API)
+- Registro: POST `/api/auth/register/` => devuelve `{ user, access, refresh }`
+- Login: POST `/api/auth/login/` con `{ username: email, password }` => `{ access, refresh }`
+- Yo: GET `/api/auth/me/` con `Authorization: Bearer <access>` => datos del usuario + perfil
+

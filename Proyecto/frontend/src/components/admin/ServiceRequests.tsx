@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "../ui/dialog"
 import { Label } from "../ui/label"
-import { Search, Phone, Clock, User, Eye, CheckCircle, MapPin } from "lucide-react"
+import { Search, Phone, MapPin, Clock, User, Eye, CheckCircle } from "lucide-react"
 
 const serviceRequests = [
   {

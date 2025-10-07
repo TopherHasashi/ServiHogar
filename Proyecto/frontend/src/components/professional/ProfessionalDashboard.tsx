@@ -3,10 +3,8 @@ import { Button } from "../ui/button"
 import { Badge } from "../ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../ui/table"
 import { Progress } from "../ui/progress"
 import { 
-  User, 
   Star, 
   Calendar, 
   DollarSign, 

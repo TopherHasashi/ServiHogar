@@ -14,18 +14,21 @@ import {
   Phone, 
   MapPin, 
   Home,
+  CheckCircle,
   ArrowLeft,
-  Shield,
   Calendar,
-  Star
+  Star,
+  Shield
 } from "lucide-react"
 
-interface ClientAuthProps {
-  onLogin: (client: any) => void
+interface UserAuthProps {
+  onLogin: (user: any) => void
+  onAdminLogin?: () => void
+  onVerifierLogin?: () => void
   onBack: () => void
 }
 
-export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
+export default function UserAuth({ onLogin, onAdminLogin, onVerifierLogin, onBack }: UserAuthProps) {
   const [activeTab, setActiveTab] = useState("login")
   const [loginForm, setLoginForm] = useState({
     email: "",
@@ -36,6 +39,8 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
     firstName: "",
     lastName: "",
     rut: "",
+    gender: "",
+    birthDate: "",
     email: "",
     phone: "",
     password: "",
@@ -68,32 +73,111 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    // Simulación de login exitoso
-    const client = {
-      id: "CLIENT-001",
-      name: "María González",
-      email: loginForm.email,
-      phone: "+56 9 8888 7777",
-      region: "Región Metropolitana",
-      district: "Santiago",
-      address: "Av. Providencia 1234"
+    
+    // Validación básica
+    if (!loginForm.email || !loginForm.password) {
+      alert('Por favor, completa todos los campos requeridos')
+      return
     }
-    onLogin(client)
+    
+    // Verificar si es login de administrador
+    if (loginForm.email === "admin@servihogar.cl" && loginForm.password === "Admin2025!ServiHogar") {
+      if (onAdminLogin) {
+        onAdminLogin()
+        return
+      }
+    }
+    
+    // Verificar si es login de verificador
+    if (loginForm.email === "verificador@servihogar.cl" && loginForm.password === "Verifier2025!ServiHogar") {
+      if (onVerifierLogin) {
+        onVerifierLogin()
+        return
+      }
+    }
+    
+    // Simulación de login exitoso - diferentes usuarios según el email
+    let user
+    
+    if (loginForm.email === "profesional@test.com") {
+      // Usuario que ya es profesional
+      user = {
+        id: "USER-PROF",
+        name: "Carlos Rodríguez",
+        email: loginForm.email,
+        phone: "+56 9 1234 5678",
+        region: "Región Metropolitana",
+        commune: "Providencia",
+        address: "Av. Providencia 1234",
+        memberSince: "Enero 2024",
+        isProfessional: true,
+        professionalProfile: {
+          specialty: "Gasfitería",
+          experience: "3",
+          verified: true,
+          rating: 4.5,
+          completedJobs: 45
+        }
+      }
+    } else {
+      // Usuario normal
+      user = {
+        id: "USER-001",
+        name: "María González",
+        email: loginForm.email,
+        phone: "+56 9 8888 7777",
+        region: "Región Metropolitana",
+        commune: "Santiago",
+        address: "Av. Libertador Bernardo O'Higgins 1234",
+        memberSince: "Marzo 2024",
+        isProfessional: false,
+        professionalProfile: null
+      }
+    }
+    
+    onLogin(user)
   }
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Validación básica
+    if (!registerForm.firstName || !registerForm.lastName || !registerForm.rut || 
+        !registerForm.gender || !registerForm.birthDate || !registerForm.email || 
+        !registerForm.password || !registerForm.region || !registerForm.district || 
+        !registerForm.address) {
+      alert('Por favor, completa todos los campos requeridos')
+      return
+    }
+    
+    if (registerForm.password !== registerForm.confirmPassword) {
+      alert('Las contraseñas no coinciden')
+      return
+    }
+    
+    if (!registerForm.acceptTerms) {
+      alert('Debes aceptar los términos y condiciones')
+      return
+    }
+    
     // Simulación de registro exitoso
-    const client = {
-      id: "CLIENT-NEW",
+    const user = {
+      id: "USER-NEW",
       name: `${registerForm.firstName} ${registerForm.lastName}`,
+      rut: registerForm.rut,
+      gender: registerForm.gender,
+      birthDate: registerForm.birthDate,
       email: registerForm.email,
       phone: registerForm.phone,
       region: registerForm.region,
-      district: registerForm.district,
-      address: registerForm.address
+      commune: registerForm.district,
+      address: registerForm.address,
+      memberSince: new Date().toLocaleDateString('es-CL', { year: 'numeric', month: 'long' }),
+      isProfessional: false,
+      professionalProfile: null
     }
-    onLogin(client)
+    
+    onLogin(user)
   }
 
   return (
@@ -111,9 +195,9 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
 
         {/* Header */}
         <div className="text-center mb-8">
-          <h1 className="text-3xl mb-2">Portal de Clientes</h1>
+          <h1 className="text-3xl mb-2">Portal de Usuarios</h1>
           <p className="text-gray-600">
-            Únete a ServiHogar y accede a los mejores profesionales para tu hogar
+            Únete a ServiHogar para solicitar servicios y también ofrecer tus habilidades
           </p>
         </div>
 
@@ -132,7 +216,7 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
                   Iniciar Sesión
                 </CardTitle>
                 <CardDescription>
-                  Accede a tu cuenta de cliente
+                  Accede a tu cuenta de ServiHogar
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -179,6 +263,40 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
                     ¿Olvidaste tu contraseña?
                   </Button>
                 </div>
+
+                {/* Demo accounts info */}
+                <div className="mt-6 space-y-3">
+                  <div className="p-4 bg-blue-50 rounded-lg">
+                    <h4 className="text-sm font-medium mb-2">Cuentas de prueba:</h4>
+                    <div className="text-xs text-gray-600 space-y-1">
+                      <div>• <strong>Usuario normal:</strong> cualquier email</div>
+                      <div>• <strong>Usuario profesional:</strong> profesional@test.com</div>
+                      <div className="text-xs text-gray-500 mt-2">Cualquier contraseña funciona para el demo</div>
+                    </div>
+                  </div>
+                  
+                  <div className="p-4 bg-slate-100 rounded-lg border border-slate-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Shield className="w-4 h-4 text-slate-600" />
+                      <h4 className="text-sm font-medium text-slate-700">Acceso Administrativo:</h4>
+                    </div>
+                    <div className="text-xs text-slate-600 space-y-1">
+                      <div><strong>Email:</strong> admin@servihogar.cl</div>
+                      <div><strong>Contraseña:</strong> Admin2025!ServiHogar</div>
+                    </div>
+                  </div>
+                  
+                  <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <CheckCircle className="w-4 h-4 text-amber-600" />
+                      <h4 className="text-sm font-medium text-amber-700">Acceso Verificador:</h4>
+                    </div>
+                    <div className="text-xs text-amber-600 space-y-1">
+                      <div><strong>Email:</strong> verificador@servihogar.cl</div>
+                      <div><strong>Contraseña:</strong> Verifier2025!ServiHogar</div>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
@@ -189,10 +307,10 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
               <CardHeader className="text-center">
                 <CardTitle className="flex items-center justify-center gap-2">
                   <Home className="w-5 h-5" />
-                  Registro de Cliente
+                  Registro de Usuario
                 </CardTitle>
                 <CardDescription>
-                  Crea tu cuenta y accede a profesionales verificados
+                  Crea tu cuenta para solicitar servicios y también ofrecer tus habilidades
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -233,6 +351,38 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
                           onChange={(e) => setRegisterForm({...registerForm, rut: e.target.value})}
                           required
                         />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="gender">Género *</Label>
+                        <Select 
+                          value={registerForm.gender} 
+                          onValueChange={(value) => setRegisterForm({...registerForm, gender: value})}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecciona tu género" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="masculino">Masculino</SelectItem>
+                            <SelectItem value="femenino">Femenino</SelectItem>
+                            <SelectItem value="otro">Otro</SelectItem>
+                            <SelectItem value="prefiero-no-decir">Prefiero no decir</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="birthDate">Fecha de Nacimiento *</Label>
+                        <div className="relative">
+                          <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                          <Input
+                            id="birthDate"
+                            type="date"
+                            className="pl-10"
+                            value={registerForm.birthDate}
+                            onChange={(e) => setRegisterForm({...registerForm, birthDate: e.target.value})}
+                            max={new Date().toISOString().split('T')[0]}
+                            required
+                          />
+                        </div>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="phone">Teléfono</Label>
@@ -317,7 +467,7 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="address">Dirección (Opcional)</Label>
+                      <Label htmlFor="address">Dirección *</Label>
                       <div className="relative">
                         <Home className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                         <Input
@@ -326,6 +476,7 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
                           className="pl-10"
                           value={registerForm.address}
                           onChange={(e) => setRegisterForm({...registerForm, address: e.target.value})}
+                          required
                         />
                       </div>
                     </div>
@@ -390,7 +541,7 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
                     className="w-full" 
                     disabled={!registerForm.acceptTerms}
                   >
-                    Crear Cuenta de Cliente
+                    Crear Cuenta de Usuario
                   </Button>
                 </form>
               </CardContent>
@@ -403,11 +554,11 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
           <Card className="text-center">
             <CardContent className="p-6">
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mx-auto mb-4">
-                <Shield className="w-6 h-6 text-blue-600" />
+                <CheckCircle className="w-6 h-6 text-blue-600" />
               </div>
-              <h3 className="text-lg mb-2">Profesionales Verificados</h3>
+              <h3 className="text-lg mb-2">Solicita Servicios</h3>
               <p className="text-sm text-gray-600">
-                Todos nuestros profesionales están certificados y verificados
+                Encuentra profesionales verificados para cualquier trabajo en tu hogar
               </p>
             </CardContent>
           </Card>
@@ -417,9 +568,9 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
               <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center mx-auto mb-4">
                 <Calendar className="w-6 h-6 text-green-600" />
               </div>
-              <h3 className="text-lg mb-2">Citas Flexibles</h3>
+              <h3 className="text-lg mb-2">Ofrece tus Servicios</h3>
               <p className="text-sm text-gray-600">
-                Agenda servicios cuando más te convenga, 24/7
+                Crea un perfil profesional y genera ingresos con tus habilidades
               </p>
             </CardContent>
           </Card>
@@ -429,9 +580,9 @@ export default function ClientAuth({ onLogin, onBack }: ClientAuthProps) {
               <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center mx-auto mb-4">
                 <Star className="w-6 h-6 text-purple-600" />
               </div>
-              <h3 className="text-lg mb-2">Calidad Garantizada</h3>
+              <h3 className="text-lg mb-2">Una Sola Cuenta</h3>
               <p className="text-sm text-gray-600">
-                Satisfacción garantizada con nuestro sistema de calificaciones
+                Maneja todo desde un solo lugar: contrata y ofrece servicios
               </p>
             </CardContent>
           </Card>

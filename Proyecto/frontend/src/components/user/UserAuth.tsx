@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -26,10 +26,16 @@ interface UserAuthProps {
   onAdminLogin?: () => void
   onVerifierLogin?: () => void
   onBack: () => void
+  initialTab?: 'login' | 'register'
 }
 
-export default function UserAuth({ onLogin, onAdminLogin, onVerifierLogin, onBack }: UserAuthProps) {
-  const [activeTab, setActiveTab] = useState("login")
+import { apiPost, saveTokens } from "../../lib/api"
+import { useNavigate } from "react-router-dom"
+import { useAuth } from "../../lib/auth"
+
+export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps) {
+  const navigate = useNavigate()
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>(initialTab ?? 'login')
   const [loginForm, setLoginForm] = useState({
     email: "",
     password: ""
@@ -50,6 +56,14 @@ export default function UserAuth({ onLogin, onAdminLogin, onVerifierLogin, onBac
     address: "",
     acceptTerms: false
   })
+  const { refreshUser } = useAuth()
+
+  // Sincronizar pestaña activa con initialTab cuando cambie (por ejemplo, en /register)
+  useEffect(() => {
+    if (initialTab && (initialTab === 'login' || initialTab === 'register')) {
+      setActiveTab(initialTab)
+    }
+  }, [initialTab])
 
   // Regiones y comunas de Chile
   const regionsAndCommunes = {
@@ -71,113 +85,88 @@ export default function UserAuth({ onLogin, onAdminLogin, onVerifierLogin, onBac
     "Región de Magallanes y de la Antártica Chilena": ["Punta Arenas", "Laguna Blanca", "Río Verde", "San Gregorio", "Cabo de Hornos", "Antártica", "Porvenir", "Primavera", "Timaukel", "Natales", "Torres del Paine"]
   }
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Validación básica
     if (!loginForm.email || !loginForm.password) {
       alert('Por favor, completa todos los campos requeridos')
       return
     }
-    
-    // Verificar si es login de administrador
-    if (loginForm.email === "admin@servihogar.cl" && loginForm.password === "Admin2025!ServiHogar") {
-      if (onAdminLogin) {
-        onAdminLogin()
+    try {
+      const tokens = await apiPost('/api/auth/login/', { username: loginForm.email, password: loginForm.password })
+      saveTokens(tokens)
+      const u = await refreshUser()
+      onLogin?.(tokens)
+      const role = u?.effective_role
+      if (role === 'administrador') {
+        navigate('/admin')
         return
       }
-    }
-    
-    // Verificar si es login de verificador
-    if (loginForm.email === "verificador@servihogar.cl" && loginForm.password === "Verifier2025!ServiHogar") {
-      if (onVerifierLogin) {
-        onVerifierLogin()
+      if (role === 'verificador') {
+        navigate('/verificador')
         return
       }
-    }
-    
-    // Simulación de login exitoso - diferentes usuarios según el email
-    let user
-    
-    if (loginForm.email === "profesional@test.com") {
-      // Usuario que ya es profesional
-      user = {
-        id: "USER-PROF",
-        name: "Carlos Rodríguez",
-        email: loginForm.email,
-        phone: "+56 9 1234 5678",
-        region: "Región Metropolitana",
-        commune: "Providencia",
-        address: "Av. Providencia 1234",
-        memberSince: "Enero 2024",
-        isProfessional: true,
-        professionalProfile: {
-          specialty: "Gasfitería",
-          experience: "3",
-          verified: true,
-          rating: 4.5,
-          completedJobs: 45
-        }
+      if (role === 'profesional') {
+        navigate('/profesional')
+        return
       }
-    } else {
-      // Usuario normal
-      user = {
-        id: "USER-001",
-        name: "María González",
-        email: loginForm.email,
-        phone: "+56 9 8888 7777",
-        region: "Región Metropolitana",
-        commune: "Santiago",
-        address: "Av. Libertador Bernardo O'Higgins 1234",
-        memberSince: "Marzo 2024",
-        isProfessional: false,
-        professionalProfile: null
-      }
+  navigate('/cliente')
+    } catch (err: any) {
+      alert('Credenciales inválidas')
     }
-    
-    onLogin(user)
   }
 
-  const handleRegister = (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Validación básica
-    if (!registerForm.firstName || !registerForm.lastName || !registerForm.rut || 
-        !registerForm.gender || !registerForm.birthDate || !registerForm.email || 
-        !registerForm.password || !registerForm.region || !registerForm.district || 
+    if (!registerForm.firstName || !registerForm.lastName || !registerForm.rut ||
+        !registerForm.gender || !registerForm.birthDate || !registerForm.email ||
+        !registerForm.password || !registerForm.region || !registerForm.district ||
         !registerForm.address) {
       alert('Por favor, completa todos los campos requeridos')
       return
     }
-    
     if (registerForm.password !== registerForm.confirmPassword) {
       alert('Las contraseñas no coinciden')
       return
     }
-    
     if (!registerForm.acceptTerms) {
       alert('Debes aceptar los términos y condiciones')
       return
     }
-    
-    // Simulación de registro exitoso
-    const user = {
-      id: "USER-NEW",
-      name: `${registerForm.firstName} ${registerForm.lastName}`,
-      rut: registerForm.rut,
-      gender: registerForm.gender,
-      birthDate: registerForm.birthDate,
-      email: registerForm.email,
-      phone: registerForm.phone,
-      region: registerForm.region,
-      commune: registerForm.district,
-      address: registerForm.address,
-      memberSince: new Date().toLocaleDateString('es-CL', { year: 'numeric', month: 'long' }),
-      isProfessional: false,
-      professionalProfile: null
+    try {
+      const payload = {
+        first_name: registerForm.firstName,
+        last_name: registerForm.lastName,
+        email: registerForm.email,
+        password: registerForm.password,
+        phone: registerForm.phone,
+        rut: registerForm.rut,
+        gender: registerForm.gender,
+        birth_date: registerForm.birthDate,
+        region: registerForm.region,
+        district: registerForm.district,
+        address: registerForm.address,
+        role: 'cliente',
+      }
+      // 1) Crear usuario
+      const data = await apiPost('/api/auth/register/', payload)
+      // 2) Guardar tokens y refrescar usuario (si falla, no bloquear el flujo)
+      saveTokens({ access: data.access, refresh: data.refresh })
+      let u = null as any
+      try {
+        u = await refreshUser()
+      } catch (_err) {
+        // Silenciar errores de /me si la creación fue exitosa (puede ser un tema temporal de CORS/token)
+        console.warn('Registro exitoso, pero falló la actualización de sesión (/api/auth/me).')
+      }
+      onLogin?.(data.user)
+      const role = u?.effective_role
+      if (role === 'administrador') { navigate('/admin'); return }
+      if (role === 'verificador') { navigate('/verificador'); return }
+      if (role === 'profesional') { navigate('/profesional'); return }
+      navigate('/cliente')
+    } catch (err: any) {
+      alert('No se pudo registrar. ' + (err?.message || ''))
     }
-    
-    onLogin(user)
   }
 
   return (
@@ -201,7 +190,7 @@ export default function UserAuth({ onLogin, onAdminLogin, onVerifierLogin, onBac
           </p>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+  <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'login' | 'register')} className="w-full">
           <TabsList className="grid w-full grid-cols-2 mb-8">
             <TabsTrigger value="login">Iniciar Sesión</TabsTrigger>
             <TabsTrigger value="register">Registrarse</TabsTrigger>
