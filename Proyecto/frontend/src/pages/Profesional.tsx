@@ -32,7 +32,7 @@ export default function ProfesionalPage() {
     region: user.profile?.region || "",
     address: user.profile?.address || "",
     isProfessional: true,
-    avatar: "",
+    avatar: (user as any)?.avatar || ((user as any)?.profile?.avatar_url) || "",
   }
 
   return <UserDashboard user={unifiedUser} onLogout={logout} />

@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -14,6 +14,7 @@ import {
   Filter,
   CheckCircle
 } from "lucide-react"
+import { apiGet } from "../lib/api"
 
 interface AllServicesProps {
   onBack: () => void
@@ -29,6 +30,9 @@ export default function AllServices({ onBack, onServiceSelect }: AllServicesProp
   const [rating, setRating] = useState("")
   const [selectedGender, setSelectedGender] = useState("")
   const [selectedAgeRange, setSelectedAgeRange] = useState("")
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [professionals, setProfessionals] = useState<any[]>([])
 
   // Función para convertir minutos a formato de horas
   const formatDuration = (minutes: number) => {
@@ -74,347 +78,24 @@ export default function AllServices({ onBack, onServiceSelect }: AllServicesProp
     return regionsAndCommunes[selectedRegion as keyof typeof regionsAndCommunes] || []
   }
 
-  // Datos simulados de profesionales
-  const professionals = [
-    // GASFITERÍA
-    {
-      id: "PROF-001",
-      name: "Juan Carlos Pérez",
-      service: "Gasfitería",
-      rating: 4.8,
-      reviews: 124,
-      region: "Región Metropolitana",
-      commune: "Santiago",
-      location: "Santiago, RM",
-      basePrice: 25000,
-      priceDisplay: "Desde $25.000",
-      experience: "5 años",
-      phone: "+56 9 8888 1111",
-      email: "juan.perez@email.com",
-      description: "Gasfiter profesional especializado en instalaciones y reparaciones de cañerías, grifería y calefont.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 34,
-      durationType: "fixed" as const,
-      fixedDuration: 60,
-      pricePerHour: 25000
-    },
-    {
-      id: "PROF-004",
-      name: "Diego Morales",
-      service: "Gasfitería",
-      rating: 4.6,
-      reviews: 87,
-      region: "Región Metropolitana",
-      commune: "Ñuñoa",
-      location: "Ñuñoa, RM",
-      basePrice: 28000,
-      priceDisplay: "Desde $28.000",
-      experience: "4 años",
-      phone: "+56 9 5555 4444",
-      email: "diego.morales@email.com",
-      description: "Gasfiter especializado en instalaciones domiciliarias, tableros de gas y sistemas de calefacción.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 29,
-      durationType: "fixed" as const,
-      fixedDuration: 90,
-      pricePerHour: 28000
-    },
-    {
-      id: "PROF-007",
-      name: "Ricardo Fuentes",
-      service: "Gasfitería",
-      rating: 4.9,
-      reviews: 203,
-      region: "Región de Valparaíso",
-      commune: "Valparaíso",
-      location: "Valparaíso, V",
-      basePrice: 30000,
-      priceDisplay: "Desde $30.000",
-      experience: "8 años",
-      phone: "+56 9 2222 7777",
-      email: "ricardo.fuentes@email.com",
-      description: "Maestro gasfiter con experiencia en obras complejas, instalaciones industriales y reparaciones de emergencia.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 41,
-      durationType: "range" as const,
-      minDuration: 60,
-      maxDuration: 360,
-      pricePerHour: 32000
-    },
-    {
-      id: "PROF-010",
-      name: "Andrés Soto",
-      service: "Gasfitería",
-      rating: 4.5,
-      reviews: 156,
-      region: "Región Metropolitana",
-      commune: "Maipú",
-      location: "Maipú, RM",
-      basePrice: 22000,
-      priceDisplay: "Desde $22.000",
-      experience: "6 años",
-      phone: "+56 9 1111 8888",
-      email: "andres.soto@email.com",
-      description: "Gasfiter especializado en reparaciones domiciliarias, cambio de llaves y mantención de calefont.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 35,
-      durationType: "fixed" as const,
-      fixedDuration: 120,
-      pricePerHour: 22000
-    },
-
-    // LIMPIEZA DEL HOGAR
-    {
-      id: "PROF-002", 
-      name: "María Elena González",
-      service: "Limpieza del Hogar",
-      rating: 4.9,
-      reviews: 98,
-      region: "Región Metropolitana",
-      commune: "Las Condes",
-      location: "Las Condes, RM",
-      basePrice: 18000,
-      priceDisplay: "Desde $18.000",
-      experience: "8 años",
-      phone: "+56 9 7777 2222",
-      email: "maria.gonzalez@email.com",
-      description: "Especialista en limpieza profunda, mantenimiento de hogar y organización de espacios.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 42,
-      durationType: "range" as const,
-      minDuration: 120,
-      maxDuration: 480,
-      pricePerHour: 12000
-    },
-    {
-      id: "PROF-005",
-      name: "Carmen Rivas",
-      service: "Limpieza del Hogar",
-      rating: 4.7,
-      reviews: 73,
-      region: "Región de Valparaíso",
-      commune: "Viña del Mar",
-      location: "Viña del Mar, V",
-      basePrice: 16000,
-      priceDisplay: "Desde $16.000",
-      experience: "5 años",
-      phone: "+56 9 4444 5555",
-      email: "carmen.rivas@email.com",
-      description: "Profesional en limpieza y desinfección, especializada en limpieza post construcción y eventos.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 38,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 600,
-      pricePerHour: 14000
-    },
-    {
-      id: "PROF-008",
-      name: "Isabel Torres",
-      service: "Limpieza del Hogar",
-      rating: 4.8,
-      reviews: 145,
-      region: "Región Metropolitana",
-      commune: "Providencia",
-      location: "Providencia, RM",
-      basePrice: 20000,
-      priceDisplay: "Desde $20.000",
-      experience: "6 años",
-      phone: "+56 9 3333 9999",
-      email: "isabel.torres@email.com",
-      description: "Experta en limpieza de oficinas y hogares, con certificación en manejo de productos ecológicos.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 33,
-      durationType: "range" as const,
-      minDuration: 120,
-      maxDuration: 420,
-      pricePerHour: 15000
-    },
-    {
-      id: "PROF-011",
-      name: "Rosa Moreno",
-      service: "Limpieza del Hogar",
-      rating: 4.6,
-      reviews: 89,
-      region: "Región del Biobío",
-      commune: "Concepción",
-      location: "Concepción, VIII",
-      basePrice: 15000,
-      priceDisplay: "Desde $15.000",
-      experience: "4 años",
-      phone: "+56 9 6666 4444",
-      email: "rosa.moreno@email.com",
-      description: "Especialista en limpieza de departamentos y casas, con experiencia en limpieza de mudanzas.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 45,
-      durationType: "range" as const,
-      minDuration: 150,
-      maxDuration: 480,
-      pricePerHour: 13000
-    },
-    {
-      id: "PROF-014",
-      name: "Lucia Vargas",
-      service: "Limpieza del Hogar",
-      rating: 4.9,
-      reviews: 167,
-      region: "Región Metropolitana",
-      commune: "Vitacura",
-      location: "Vitacura, RM",
-      basePrice: 22000,
-      priceDisplay: "Desde $22.000",
-      experience: "9 años",
-      phone: "+56 9 8888 3333",
-      email: "lucia.vargas@email.com",
-      description: "Profesional premium en limpieza y organización del hogar, especializada en casas de alto nivel.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 39,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 540,
-      pricePerHour: 18000
-    },
-
-    // JARDINERÍA
-    {
-      id: "PROF-003",
-      name: "Carlos Rodríguez",
-      service: "Jardinería",
-      rating: 4.7,
-      reviews: 156,
-      region: "Región Metropolitana",
-      commune: "Providencia",
-      location: "Providencia, RM",
-      basePrice: 30000,
-      priceDisplay: "Desde $30.000",
-      experience: "6 años",
-      phone: "+56 9 6666 3333",
-      email: "carlos.rodriguez@email.com",
-      description: "Jardinero profesional con experiencia en diseño, mantención y podas de jardines.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 38,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 480,
-      pricePerHour: 15000
-    },
-    {
-      id: "PROF-006",
-      name: "Patricia Silva",
-      service: "Jardinería",
-      rating: 4.8,
-      reviews: 112,
-      region: "Región del Biobío",
-      commune: "Concepción",
-      location: "Concepción, VIII",
-      basePrice: 25000,
-      priceDisplay: "Desde $25.000",
-      experience: "7 años",
-      phone: "+56 9 3333 6666",
-      email: "patricia.silva@email.com",
-      description: "Paisajista especializada en diseño y mantención de jardines, poda de árboles y césped.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 37,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 540,
-      pricePerHour: 20000
-    },
-    {
-      id: "PROF-009",
-      name: "Fernando López",
-      service: "Jardinería",
-      rating: 4.5,
-      reviews: 94,
-      region: "Región de los Lagos",
-      commune: "Puerto Montt",
-      location: "Puerto Montt, X",
-      basePrice: 28000,
-      priceDisplay: "Desde $28.000",
-      experience: "5 años",
-      phone: "+56 9 7777 1111",
-      email: "fernando.lopez@email.com",
-      description: "Especialista en mantención de jardines, sistemas de riego y plantas ornamentales.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 43,
-      durationType: "range" as const,
-      minDuration: 240,
-      maxDuration: 480,
-      pricePerHour: 22000
-    },
-    {
-      id: "PROF-012",
-      name: "Miguel Herrera",
-      service: "Jardinería",
-      rating: 4.6,
-      reviews: 128,
-      region: "Región Metropolitana",
-      commune: "La Reina",
-      location: "La Reina, RM",
-      basePrice: 32000,
-      priceDisplay: "Desde $32.000",
-      experience: "8 años",
-      phone: "+56 9 5555 7777",
-      email: "miguel.herrera@email.com",
-      description: "Jardinero experto en diseño paisajístico, mantención de piscinas y áreas verdes residenciales.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 40,
-      durationType: "range" as const,
-      minDuration: 120,
-      maxDuration: 420,
-      pricePerHour: 25000
-    },
-    {
-      id: "PROF-013",
-      name: "Alejandra Campos",
-      service: "Jardinería",
-      rating: 4.9,
-      reviews: 185,
-      region: "Región de Valparaíso",
-      commune: "Quilpué",
-      location: "Quilpué, V",
-      basePrice: 26000,
-      priceDisplay: "Desde $26.000",
-      experience: "6 años",
-      phone: "+56 9 9999 2222",
-      email: "alejandra.campos@email.com",
-      description: "Especialista en jardinería ecológica, huertos urbanos y diseño de espacios verdes sustentables.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 34,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 360,
-      pricePerHour: 24000
+  // Cargar servicios reales desde API
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        // Construir query básica; filtros locales se aplican en cliente por ahora
+        const list = await apiGet(`/api/services/search/`)
+        setProfessionals(Array.isArray(list) ? list : [])
+      } catch (e: any) {
+        console.error('Failed to load services', e)
+        setError('No se pudieron cargar los servicios')
+      } finally {
+        setLoading(false)
+      }
     }
-  ]
+    fetchData()
+  }, [])
 
   // Filtrar profesionales
   const filteredProfessionals = professionals.filter(prof => {
@@ -644,8 +325,18 @@ export default function AllServices({ onBack, onServiceSelect }: AllServicesProp
             </div>
 
             {/* Lista de profesionales */}
+            {loading && (
+              <Card>
+                <CardContent className="py-10 text-center text-gray-500">Cargando servicios...</CardContent>
+              </Card>
+            )}
+            {error && !loading && (
+              <Card>
+                <CardContent className="py-10 text-center text-red-600">{error}</CardContent>
+              </Card>
+            )}
             <div className="grid gap-4">
-              {filteredProfessionals.length === 0 ? (
+              {!loading && !error && filteredProfessionals.length === 0 ? (
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center py-12">
                     <Search className="w-12 h-12 text-gray-400 mb-4" />
@@ -668,7 +359,7 @@ export default function AllServices({ onBack, onServiceSelect }: AllServicesProp
                             <Avatar className="w-20 h-20">
                               <AvatarImage src={professional.avatar} alt={professional.name} />
                               <AvatarFallback>
-                                {professional.name.split(' ').map(n => n[0]).join('')}
+                                {professional.name.split(' ').map((n: string) => n[0]).join('')}
                               </AvatarFallback>
                             </Avatar>
                             {professional.verified && (

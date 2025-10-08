@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../ui/card"
 import { Button } from "../../ui/button"
 import { Input } from "../../ui/input"
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Badge } from "../../ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "../../ui/avatar"
 import ServiceBooking from "../ServiceBooking"
+import { apiGet } from "../../../lib/api"
 import { 
   Search, 
   MapPin, 
@@ -16,12 +17,12 @@ import {
 } from "lucide-react"
 
 interface SearchTabProps {
-  professionals: any[]
+  professionals?: any[]
   user?: any
   onServiceSelect?: (professional: any) => void
 }
 
-export default function SearchTab({ professionals, user }: SearchTabProps) {
+export default function SearchTab({ professionals: initialProfessionals = [], user }: SearchTabProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedService, setSelectedService] = useState("")
   const [selectedRegion, setSelectedRegion] = useState("")
@@ -32,6 +33,111 @@ export default function SearchTab({ professionals, user }: SearchTabProps) {
   const [selectedAgeRange, setSelectedAgeRange] = useState("")
   const [showServiceBooking, setShowServiceBooking] = useState(false)
   const [selectedProfessional, setSelectedProfessional] = useState<any>(null)
+  const [items, setItems] = useState<any[]>(initialProfessionals)
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
+  const [regions, setRegions] = useState<Array<{ id: string; nombre: string; codigo?: string }>>([])
+  const [communes, setCommunes] = useState<Array<{ id: string; nombre: string; codigo?: string }>>([])
+  const [loadingRegions, setLoadingRegions] = useState<boolean>(false)
+  const [loadingCommunes, setLoadingCommunes] = useState<boolean>(false)
+
+  // Mapeo nombre de servicio -> slug de categoría usado por el backend
+  const serviceNameToSlug: Record<string, string> = useMemo(() => ({
+    "Gasfitería": "gasfiteria",
+    "Limpieza del Hogar": "limpieza",
+    "Jardinería": "jardineria",
+  }), [])
+
+  // Cargar regiones al montar
+  useEffect(() => {
+    let ignore = false
+    setLoadingRegions(true)
+    apiGet('/api/geo/regiones/')
+      .then((data) => {
+        if (ignore) return
+        const list = Array.isArray(data) ? data : []
+        setRegions(list.map((r: any) => ({ id: String(r.id), nombre: r.nombre, codigo: r.codigo })))
+      })
+      .catch(() => {})
+      .finally(() => { if (!ignore) setLoadingRegions(false) })
+    return () => { ignore = true }
+  }, [])
+
+  // Cargar comunas cuando cambie la región seleccionada
+  useEffect(() => {
+    let ignore = false
+    setCommunes([])
+    if (!selectedRegion || selectedRegion === 'all') return
+    setLoadingCommunes(true)
+    apiGet(`/api/geo/comunas/?region_id=${encodeURIComponent(selectedRegion)}`)
+      .then((data) => {
+        if (ignore) return
+        const list = Array.isArray(data) ? data : []
+        setCommunes(list.map((c: any) => ({ id: String(c.id), nombre: c.nombre, codigo: c.codigo })))
+      })
+      .catch(() => {})
+      .finally(() => { if (!ignore) setLoadingCommunes(false) })
+    return () => { ignore = true }
+  }, [selectedRegion])
+
+  // Construir y hacer fetch cuando cambien filtros (lado servidor)
+  useEffect(() => {
+    let ignore = false
+    const controller = new AbortController()
+
+    const timeout = setTimeout(async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const params = new URLSearchParams()
+        const q = (searchQuery || '').trim()
+        if (q) params.set('q', q)
+
+        const svc = (selectedService || '').trim()
+        if (svc && svc !== 'all') {
+          const slug = serviceNameToSlug[svc]
+          if (slug) params.set('category_slug', slug)
+        }
+
+  const reg = (selectedRegion || '').trim()
+  if (reg && reg !== 'all') params.set('region_id', reg)
+
+  const com = (selectedCommune || '').trim()
+  if (com && com !== 'all') params.set('comuna_id', com)
+
+        // Precio
+        if (priceRange && priceRange !== 'all') {
+          if (priceRange === 'low') {
+            params.set('min_price', '10000')
+            params.set('max_price', '20000')
+          } else if (priceRange === 'medium') {
+            params.set('min_price', '20001')
+            params.set('max_price', '30000')
+          } else if (priceRange === 'high') {
+            params.set('min_price', '30001')
+          }
+        }
+
+        const qs = params.toString()
+        const path = `/api/services/search/${qs ? `?${qs}` : ''}`
+        const data = await apiGet(path)
+        if (ignore) return
+        setItems(Array.isArray(data) ? data : [])
+      } catch (e: any) {
+        if (ignore) return
+        if (e?.name !== 'AbortError') setError(e?.message || 'No se pudieron cargar los servicios')
+      } finally {
+        if (ignore) return
+        setLoading(false)
+      }
+    }, 300) // debounce
+
+    return () => {
+      ignore = true
+      controller.abort()
+      clearTimeout(timeout)
+    }
+  }, [searchQuery, selectedService, selectedRegion, selectedCommune, priceRange, serviceNameToSlug])
 
   // Función para convertir minutos a formato de horas
   const formatDuration = (minutes: number) => {
@@ -52,38 +158,19 @@ export default function SearchTab({ professionals, user }: SearchTabProps) {
   //   { id: "jardineria", name: "Jardinería", icon: Scissors }
   // ]
 
-  // Regiones de Chile con comunas principales
-  const regionsAndCommunes = {
-    "Región Metropolitana": ["Santiago", "Las Condes", "Providencia", "Ñuñoa", "La Reina", "Vitacura", "San Miguel", "Maipú", "Puente Alto", "San Bernardo"],
-    "Región de Valparaíso": ["Valparaíso", "Viña del Mar", "Quilpué", "Villa Alemana", "Concón", "San Antonio"],
-    "Región del Biobío": ["Concepción", "Talcahuano", "Chillán", "Los Ángeles", "Coronel"],
-    "Región de la Araucanía": ["Temuco", "Villarrica", "Pucón", "Angol"],
-    "Región de Los Lagos": ["Puerto Montt", "Osorno", "Valdivia", "Castro"],
-    "Región de Antofagasta": ["Antofagasta", "Calama", "Tocopilla"],
-    "Región de Atacama": ["Copiapó", "Vallenar"],
-    "Región de Coquimbo": ["La Serena", "Coquimbo", "Ovalle"],
-    "Región del Libertador": ["Rancagua", "San Fernando", "Rengo"],
-    "Región del Maule": ["Talca", "Curicó", "Linares"],
-    "Región de Aysén": ["Coyhaique", "Puerto Aysén"],
-    "Región de Magallanes": ["Punta Arenas", "Puerto Natales"],
-    "Región de Arica y Parinacota": ["Arica", "Putre"],
-    "Región de Tarapacá": ["Iquique", "Alto Hospicio"],
-    "Región de Ñuble": ["Chillán", "San Carlos"]
-  }
-
-  // Obtener comunas basadas en la región seleccionada
-  const getAvailableCommunes = () => {
-    if (!selectedRegion || selectedRegion === "all") return []
-    return regionsAndCommunes[selectedRegion as keyof typeof regionsAndCommunes] || []
-  }
+  // Nombres seleccionados (para comparaciones locales si fuera necesario)
+  const selectedRegionName = useMemo(() => regions.find(r => r.id === selectedRegion)?.nombre, [regions, selectedRegion])
+  const selectedCommuneName = useMemo(() => communes.find(c => c.id === selectedCommune)?.nombre, [communes, selectedCommune])
 
   // Filtrar profesionales
-  const filteredProfessionals = professionals.filter(prof => {
+  const source = items && items.length > 0 ? items : initialProfessionals
+  const filteredProfessionals = source.filter(prof => {
     const matchesSearch = prof.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                          prof.service.toLowerCase().includes(searchQuery.toLowerCase())
+    // Estos ya se filtran en el servidor, pero los mantenemos por seguridad si llegan datos cacheados
     const matchesService = !selectedService || selectedService === "all" || prof.service === selectedService
-    const matchesRegion = !selectedRegion || selectedRegion === "all" || prof.region === selectedRegion
-    const matchesCommune = !selectedCommune || selectedCommune === "all" || prof.commune === selectedCommune
+  const matchesRegion = !selectedRegion || selectedRegion === "all" || (selectedRegionName ? prof.region === selectedRegionName : true)
+  const matchesCommune = !selectedCommune || selectedCommune === "all" || (selectedCommuneName ? prof.commune === selectedCommuneName : true)
     const matchesRating = !rating || rating === "all" || 
                          (rating === "5" && prof.rating >= 4.8) ||
                          (rating === "4" && prof.rating >= 4.0) ||
@@ -158,6 +245,12 @@ export default function SearchTab({ professionals, user }: SearchTabProps) {
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
+            {loading && (
+              <p className="text-xs text-gray-500">Cargando servicios...</p>
+            )}
+            {error && (
+              <p className="text-xs text-red-600">{error}</p>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -199,13 +292,16 @@ export default function SearchTab({ professionals, user }: SearchTabProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas las regiones</SelectItem>
-                    {Object.keys(regionsAndCommunes).map((region) => (
-                      <SelectItem key={region} value={region}>
-                        {region}
+                    {regions.map(r => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.nombre}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {loadingRegions && (
+                  <p className="text-xs text-gray-500">Cargando regiones...</p>
+                )}
               </div>
 
               {/* Filtro por Comuna */}
@@ -221,13 +317,16 @@ export default function SearchTab({ professionals, user }: SearchTabProps) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todas las comunas</SelectItem>
-                    {getAvailableCommunes().map((commune) => (
-                      <SelectItem key={commune} value={commune}>
-                        {commune}
+                    {communes.map(c => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nombre}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {loadingCommunes && (
+                  <p className="text-xs text-gray-500">Cargando comunas...</p>
+                )}
               </div>
 
               {/* Filtro por Calificación */}
@@ -299,7 +398,13 @@ export default function SearchTab({ professionals, user }: SearchTabProps) {
 
         {/* Área principal - Lista de profesionales */}
         <div className="flex-1">
-          {filteredProfessionals.length === 0 ? (
+          {loading ? (
+            <Card>
+              <CardContent className="py-8 sm:py-12">
+                <p className="text-sm text-gray-600">Cargando resultados...</p>
+              </CardContent>
+            </Card>
+          ) : filteredProfessionals.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-8 sm:py-12">
                 <Search className="w-8 h-8 sm:w-12 sm:h-12 text-gray-400 mb-3 sm:mb-4" />

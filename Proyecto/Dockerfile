@@ -6,7 +6,7 @@ WORKDIR /app
 
 # System deps (psycopg build, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev postgresql-client \
+    build-essential libpq-dev postgresql-client curl \
  && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./
@@ -21,4 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 EXPOSE 8000
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+COPY scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

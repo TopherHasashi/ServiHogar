@@ -1,5 +1,5 @@
 import { Button } from "./ui/button"
-import { Phone, Menu } from "lucide-react"
+import { Menu } from "lucide-react"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "./ui/sheet"
 
 interface HeaderProps {
@@ -87,8 +87,7 @@ export default function Header({ onUserClick, onAllServicesClick, onReviewsClick
                   )}
                   <div className="pt-6 space-y-4 border-t border-gray-200">
                     <div className="flex items-center space-x-3 text-sm text-gray-600">
-                      <Phone className="w-4 h-4" />
-                      <span>+56 9 8888 7777</span>
+                      
                     </div>
                     <Button className="w-full" size="lg" onClick={onUserClick}>
                       Iniciar Sesión

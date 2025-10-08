@@ -34,7 +34,8 @@ export default function ClientePage() {
     region: user.profile?.region || "",
     address: user.profile?.address || "",
     isProfessional: user.effective_role === 'profesional' || user.effective_role === 'administrador',
-    avatar: "",
+    // Preferir avatar tope (expuesto por /api/auth/me/) y luego el del perfil si existe
+    avatar: (user as any)?.avatar || ((user as any)?.profile?.avatar_url) || "",
   }
 
   return <UserDashboard user={unifiedUser} onLogout={logout} />

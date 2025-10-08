@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -29,7 +29,7 @@ interface UserAuthProps {
   initialTab?: 'login' | 'register'
 }
 
-import { apiPost, saveTokens } from "../../lib/api"
+import { apiGet, apiPost, saveTokens } from "../../lib/api"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
 
@@ -56,6 +56,7 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
     address: "",
     acceptTerms: false
   })
+  const [registerError, setRegisterError] = useState<string>("")
   const { refreshUser } = useAuth()
 
   // Sincronizar pestaña activa con initialTab cuando cambie (por ejemplo, en /register)
@@ -65,25 +66,38 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
     }
   }, [initialTab])
 
-  // Regiones y comunas de Chile
-  const regionsAndCommunes = {
-    "Región de Arica y Parinacota": ["Arica", "Camarones", "Putre", "General Lagos"],
-    "Región de Tarapacá": ["Iquique", "Alto Hospicio", "Pozo Almonte", "Camiña", "Colchane", "Huara", "Pica"],
-    "Región de Antofagasta": ["Antofagasta", "Mejillones", "Sierra Gorda", "Taltal", "Calama", "Ollagüe", "San Pedro de Atacama", "Tocopilla", "María Elena"],
-    "Región de Atacama": ["Copiapó", "Caldera", "Tierra Amarilla", "Chañaral", "Diego de Almagro", "Vallenar", "Alto del Carmen", "Freirina", "Huasco"],
-    "Región de Coquimbo": ["La Serena", "Coquimbo", "Andacollo", "La Higuera", "Paiguano", "Vicuña", "Illapel", "Canela", "Los Vilos", "Salamanca", "Ovalle", "Combarbalá", "Monte Patria", "Punitaqui", "Río Hurtado"],
-    "Región de Valparaíso": ["Valparaíso", "Casablanca", "Concón", "Juan Fernández", "Puchuncaví", "Quintero", "Viña del Mar", "Isla de Pascua", "Los Andes", "Calle Larga", "Rinconada", "San Esteban", "La Ligua", "Cabildo", "Papudo", "Petorca", "Zapallar", "Quillota", "Calera", "Hijuelas", "La Cruz", "Nogales", "San Antonio", "Algarrobo", "Cartagena", "El Quisco", "El Tabo", "Santo Domingo", "San Felipe", "Catemu", "Llaillay", "Panquehue", "Putaendo", "Santa María", "Limache", "Olmué", "Villa Alemana"],
-    "Región Metropolitana": ["Santiago", "Cerrillos", "Cerro Navia", "Conchalí", "El Bosque", "Estación Central", "Huechuraba", "Independencia", "La Cisterna", "La Florida", "La Granja", "La Pintana", "La Reina", "Las Condes", "Lo Barnechea", "Lo Espejo", "Lo Prado", "Macul", "Maipú", "Ñuñoa", "Pedro Aguirre Cerda", "Peñalolén", "Providencia", "Pudahuel", "Quilicura", "Quinta Normal", "Recoleta", "Renca", "San Miguel", "San Joaquín", "San Ramón", "Vitacura", "Puente Alto", "Pirque", "San José de Maipo", "Colina", "Lampa", "Tiltil", "San Bernardo", "Buin", "Calera de Tango", "Paine", "Melipilla", "Alhué", "Curacaví", "María Pinto", "San Pedro", "Talagante", "El Monte", "Isla de Maipo", "Padre Hurtado", "Peñaflor"],
-    "Región del Libertador General Bernardo O'Higgins": ["Rancagua", "Codegua", "Coinco", "Coltauco", "Doñihue", "Graneros", "Las Cabras", "Machalí", "Malloa", "Mostazal", "Olivar", "Peumo", "Pichidegua", "Quinta de Tilcoco", "Rengo", "Requínoa", "San Vicente", "Pichilemu", "La Estrella", "Litueche", "Marchihue", "Navidad", "Paredones", "San Fernando", "Chépica", "Chimbarongo", "Lolol", "Nancagua", "Palmilla", "Peralillo", "Placilla", "Pumanque", "Santa Cruz"],
-    "Región del Maule": ["Talca", "Constitución", "Curepto", "Empedrado", "Maule", "Pelarco", "Pencahue", "Río Claro", "San Clemente", "San Rafael", "Cauquenes", "Chanco", "Pelluhue", "Curicó", "Hualañé", "Licantén", "Molina", "Rauco", "Romeral", "Sagrada Familia", "Teno", "Vichuquén", "Linares", "Colbún", "Longaví", "Parral", "Retiro", "San Javier", "Villa Alegre", "Yerbas Buenas"],
-    "Región del Ñuble": ["Chillán", "Bulnes", "Cobquecura", "Coelemu", "Coihueco", "Chillán Viejo", "El Carmen", "Ninhue", "Ñiquén", "Pemuco", "Pinto", "Portezuelo", "Quillón", "Quirihue", "Ránquil", "San Carlos", "San Fabián", "San Ignacio", "San Nicolás", "Treguaco", "Yungay"],
-    "Región del Biobío": ["Concepción", "Coronel", "Chiguayante", "Florida", "Hualqui", "Lota", "Penco", "San Pedro de la Paz", "Santa Juana", "Talcahuano", "Tomé", "Hualpén", "Lebu", "Arauco", "Cañete", "Contulmo", "Curanilahue", "Los Álamos", "Tirúa", "Los Ángeles", "Antuco", "Cabrero", "Laja", "Mulchén", "Nacimiento", "Negrete", "Quilaco", "Quilleco", "San Rosendo", "Santa Bárbara", "Tucapel", "Yumbel", "Alto Biobío"],
-    "Región de La Araucanía": ["Temuco", "Carahue", "Cunco", "Curarrehue", "Freire", "Galvarino", "Gorbea", "Lautaro", "Loncoche", "Melipeuco", "Nueva Imperial", "Padre Las Casas", "Perquenco", "Pitrufquén", "Pucón", "Saavedra", "Teodoro Schmidt", "Toltén", "Vilcún", "Villarrica", "Cholchol", "Angol", "Collipulli", "Curacautín", "Ercilla", "Lonquimay", "Los Sauces", "Lumaco", "Purén", "Renaico", "Traiguén", "Victoria"],
-    "Región de Los Ríos": ["Valdivia", "Corral", "Lanco", "Los Lagos", "Máfil", "Mariquina", "Paillaco", "Panguipulli", "La Unión", "Futrono", "Lago Ranco", "Río Bueno"],
-    "Región de Los Lagos": ["Puerto Montt", "Calbuco", "Cochamó", "Fresia", "Los Muermos", "Llanquihue", "Maullín", "Puerto Varas", "Castro", "Ancud", "Chonchi", "Curaco de Vélez", "Dalcahue", "Puqueldón", "Queilén", "Quellón", "Quemchi", "Quinchao", "Osorno", "Puerto Octay", "Purranque", "Puyehue", "Río Negro", "San Juan de la Costa", "San Pablo", "Chaitén", "Futaleufú", "Hualaihué", "Palena"],
-    "Región Aysén del General Carlos Ibáñez del Campo": ["Coyhaique", "Lago Verde", "Aysén", "Cisnes", "Guaitecas", "Cochrane", "O'Higgins", "Tortel", "Chile Chico", "Río Ibáñez"],
-    "Región de Magallanes y de la Antártica Chilena": ["Punta Arenas", "Laguna Blanca", "Río Verde", "San Gregorio", "Cabo de Hornos", "Antártica", "Porvenir", "Primavera", "Timaukel", "Natales", "Torres del Paine"]
-  }
+  // Carga dinámica de regiones/comunas
+  const [regions, setRegions] = useState<{ id: string; nombre: string; codigo: string }[]>([])
+  const [communes, setCommunes] = useState<{ id: string; nombre: string; codigo: string }[]>([])
+  const [selectedRegionId, setSelectedRegionId] = useState<string>("")
+  const [selectedComunaId, setSelectedComunaId] = useState<string>("")
+
+  useEffect(() => {
+    ;(async () => {
+      try {
+        const r = await apiGet('/api/geo/regiones/')
+        setRegions(r)
+      } catch (e) {
+        console.warn('No se pudieron cargar regiones', e)
+      }
+    })()
+  }, [])
+
+  useEffect(() => {
+    ;(async () => {
+      if (!selectedRegionId) {
+        setCommunes([])
+        setSelectedComunaId("")
+        return
+      }
+      try {
+        const c = await apiGet(`/api/geo/comunas/?region_id=${selectedRegionId}`)
+        setCommunes(c)
+      } catch (e) {
+        console.warn('No se pudieron cargar comunas', e)
+      }
+    })()
+  }, [selectedRegionId])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -115,13 +129,76 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
     }
   }
 
+  // Utilidades: formato y validación de RUT y teléfono CL
+  const formatRut = (value: string) => {
+    // Limpia y aplica formato 12.345.678-9
+    const clean = value.replace(/[^0-9kK]/g, '').toUpperCase()
+    if (!clean) return ''
+    const body = clean.slice(0, -1)
+    const dv = clean.slice(-1)
+    const reversed = body.split('').reverse().join('')
+    const withDots = reversed.replace(/(\d{3})(?=\d)/g, '$1.')
+    const bodyFormatted = withDots.split('').reverse().join('')
+    return `${bodyFormatted}-${dv}`
+  }
+
+  const validateRut = (rut: string) => {
+    // Calcula dígito verificador
+    const clean = rut.replace(/\./g, '').replace(/-/g, '').toUpperCase()
+    if (clean.length < 2) return false
+    const body = clean.slice(0, -1)
+    let dv = clean.slice(-1)
+    let sum = 0
+    let mul = 2
+    for (let i = body.length - 1; i >= 0; i--) {
+      sum += parseInt(body[i], 10) * mul
+      mul = mul === 7 ? 2 : mul + 1
+    }
+    const res = 11 - (sum % 11)
+    let dvCalc = ''
+    if (res === 11) dvCalc = '0'
+    else if (res === 10) dvCalc = 'K'
+    else dvCalc = String(res)
+    return dv === dvCalc
+  }
+
+  const formatPhoneCl = (value: string) => {
+    // Formato sugerido: +56 9 1234 5678
+    let v = value.replace(/[^\d+]/g, '')
+    if (!v.startsWith('+')) {
+      v = '+56' + v.replace(/^0+/, '')
+    }
+    // Insertar espacios: +56 9 1234 5678
+    const digits = v.replace(/\D/g, '')
+    if (digits.startsWith('56')) {
+      const rest = digits.slice(2)
+      if (rest.length <= 1) return `+56 ${rest}`.trim()
+      const p1 = rest.slice(0, 1) // 9
+      const p2 = rest.slice(1, 5) // 1234
+      const p3 = rest.slice(5, 9) // 5678
+      return `+56 ${p1}${p2 ? ' ' + p2 : ''}${p3 ? ' ' + p3 : ''}`.trim()
+    }
+    return v
+  }
+
+  const isRutValid = useMemo(() => registerForm.rut ? validateRut(registerForm.rut) : false, [registerForm.rut])
+  const isPhoneValid = useMemo(() => {
+    const digits = registerForm.phone.replace(/\D/g, '')
+    // +56 9 + 8 dígitos => 11 o 12 dígitos con país
+    return digits.length >= 11 && digits.startsWith('56')
+  }, [registerForm.phone])
+
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault()
+    setRegisterError("")
     if (!registerForm.firstName || !registerForm.lastName || !registerForm.rut ||
         !registerForm.gender || !registerForm.birthDate || !registerForm.email ||
-        !registerForm.password || !registerForm.region || !registerForm.district ||
-        !registerForm.address) {
+        !registerForm.password || !selectedComunaId || !registerForm.address) {
       alert('Por favor, completa todos los campos requeridos')
+      return
+    }
+    if (!isRutValid) {
+      alert('El RUT ingresado no es válido')
       return
     }
     if (registerForm.password !== registerForm.confirmPassword) {
@@ -133,7 +210,7 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
       return
     }
     try {
-      const payload = {
+      const payload: any = {
         first_name: registerForm.firstName,
         last_name: registerForm.lastName,
         email: registerForm.email,
@@ -142,8 +219,7 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
         rut: registerForm.rut,
         gender: registerForm.gender,
         birth_date: registerForm.birthDate,
-        region: registerForm.region,
-        district: registerForm.district,
+        comuna_id: selectedComunaId,
         address: registerForm.address,
         role: 'cliente',
       }
@@ -165,9 +241,13 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
       if (role === 'profesional') { navigate('/profesional'); return }
       navigate('/cliente')
     } catch (err: any) {
-      alert('No se pudo registrar. ' + (err?.message || ''))
+      // Intentar extraer mensajes del backend
+      const msg = (err?.data && (err.data.usuario || err.data.detail)) || err?.message || 'Intenta nuevamente.'
+      setRegisterError(typeof msg === 'string' ? msg : JSON.stringify(msg))
     }
   }
+
+  // Dev creation buttons removed per request: users will log in with seeded credentials.
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
@@ -253,6 +333,8 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                   </Button>
                 </div>
 
+                {/* Dev creation buttons removed. Admin and Verifier credentials are pre-seeded in the backend. */}
+
                 {/* Demo accounts info */}
                 <div className="mt-6 space-y-3">
                   <div className="p-4 bg-blue-50 rounded-lg">
@@ -304,6 +386,11 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleRegister} className="space-y-6">
+                  {registerError ? (
+                    <div className="p-3 rounded border border-red-300 bg-red-50 text-red-700 text-sm">
+                      {registerError}
+                    </div>
+                  ) : null}
                   {/* Información Personal */}
                   <div>
                     <h3 className="text-lg mb-4 flex items-center gap-2">
@@ -337,9 +424,12 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                           id="rut"
                           placeholder="12.345.678-9"
                           value={registerForm.rut}
-                          onChange={(e) => setRegisterForm({...registerForm, rut: e.target.value})}
+                          onChange={(e) => setRegisterForm({...registerForm, rut: formatRut(e.target.value)})}
                           required
                         />
+                        {registerForm.rut && !isRutValid && (
+                          <p className="text-xs text-red-600">RUT inválido</p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="gender">Género *</Label>
@@ -353,8 +443,7 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                           <SelectContent className="bg-white border shadow-lg">
                             <SelectItem value="masculino" className="hover:bg-gray-100 focus:bg-gray-100">Masculino</SelectItem>
                             <SelectItem value="femenino" className="hover:bg-gray-100 focus:bg-gray-100">Femenino</SelectItem>
-                            <SelectItem value="otro" className="hover:bg-gray-100 focus:bg-gray-100">Otro</SelectItem>
-                            <SelectItem value="prefiero-no-decir" className="hover:bg-gray-100 focus:bg-gray-100">Prefiero no decir</SelectItem>
+                            <SelectItem value="no_binario" className="hover:bg-gray-100 focus:bg-gray-100">No binario</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -379,12 +468,15 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                           <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                           <Input
                             id="phone"
-                            placeholder="+56 9 8888 7777"
+                            placeholder="+56 9 1234 5678"
                             className="pl-10"
                             value={registerForm.phone}
-                            onChange={(e) => setRegisterForm({...registerForm, phone: e.target.value})}
+                            onChange={(e) => setRegisterForm({...registerForm, phone: formatPhoneCl(e.target.value)})}
                             required
                           />
+                          {registerForm.phone && !isPhoneValid && (
+                            <p className="text-xs text-red-600 mt-1">Teléfono chileno inválido</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -415,20 +507,20 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="region">Región</Label>
+                        <Label>Región</Label>
                         <div className="relative">
                           <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                           <Select 
-                            value={registerForm.region} 
-                            onValueChange={(value) => setRegisterForm({...registerForm, region: value, district: ""})}
+                            value={selectedRegionId}
+                            onValueChange={(value) => { setSelectedRegionId(value); setSelectedComunaId("") }}
                           >
                             <SelectTrigger className="pl-10 bg-white">
                               <SelectValue placeholder="Selecciona tu región" />
                             </SelectTrigger>
                             <SelectContent className="bg-white border shadow-lg max-h-60 overflow-y-auto">
-                              {Object.keys(regionsAndCommunes).map((region) => (
-                                <SelectItem key={region} value={region} className="hover:bg-gray-100 focus:bg-gray-100">
-                                  {region}
+                              {regions.map(r => (
+                                <SelectItem key={r.id} value={r.id} className="hover:bg-gray-100 focus:bg-gray-100">
+                                  {r.nombre}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -436,19 +528,19 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="district">Comuna</Label>
+                        <Label>Comuna</Label>
                         <Select 
-                          value={registerForm.district} 
-                          onValueChange={(value) => setRegisterForm({...registerForm, district: value})}
-                          disabled={!registerForm.region}
+                          value={selectedComunaId}
+                          onValueChange={(value) => setSelectedComunaId(value)}
+                          disabled={!selectedRegionId}
                         >
                           <SelectTrigger className="bg-white">
-                            <SelectValue placeholder={registerForm.region ? "Selecciona tu comuna" : "Primero selecciona una región"} />
+                            <SelectValue placeholder={selectedRegionId ? "Selecciona tu comuna" : "Primero selecciona una región"} />
                           </SelectTrigger>
                           <SelectContent className="bg-white border shadow-lg max-h-60 overflow-y-auto">
-                            {registerForm.region && regionsAndCommunes[registerForm.region as keyof typeof regionsAndCommunes]?.map((district) => (
-                              <SelectItem key={district} value={district} className="hover:bg-gray-100 focus:bg-gray-100">
-                                {district}
+                            {communes.map(c => (
+                              <SelectItem key={c.id} value={c.id} className="hover:bg-gray-100 focus:bg-gray-100">
+                                {c.nombre}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -528,7 +620,7 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                   <Button 
                     type="submit" 
                     className="w-full" 
-                    disabled={!registerForm.acceptTerms}
+                    disabled={!registerForm.acceptTerms || !isRutValid || !isPhoneValid}
                   >
                     Crear Cuenta de Usuario
                   </Button>

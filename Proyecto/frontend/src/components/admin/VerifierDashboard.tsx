@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/card"
 import { Button } from "../ui/button"
 import { Badge } from "../ui/badge"
@@ -9,7 +9,6 @@ import {
   XCircle, 
   Eye, 
   FileText, 
-  Image, 
   Download,
   User,
   Calendar,
@@ -53,185 +52,79 @@ interface ProfessionalDocument {
 export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) {
   const [selectedProfessional, setSelectedProfessional] = useState<string | null>(null)
   const [viewingDocument, setViewingDocument] = useState<string | null>(null)
+  const [viewingDocUrl, setViewingDocUrl] = useState<string | null>(null)
+  const [viewingDocName, setViewingDocName] = useState<string | null>(null)
+  const [pendingVerifications, setPendingVerifications] = useState<ProfessionalDocument[]>([])
 
-  // Mock data - En producción vendría de la API
-  const [pendingVerifications, setPendingVerifications] = useState<ProfessionalDocument[]>([
-    {
-      id: "VER-001",
-      professionalId: "PROF-001",
-      professionalName: "Carlos Rodríguez",
-      professionalEmail: "carlos.rodriguez@email.com",
-      specialty: "Gasfitería",
-      region: "Región Metropolitana",
-      commune: "Santiago",
-      submittedDate: "2024-12-15",
-      status: "pending",
-      isFirstService: true, // Primera solicitud - incluye certificado de antecedentes
-      documents: [
-        {
-          id: "DOC-003",
-          type: "antecedentes",
-          name: "Certificado de Antecedentes",
-          url: "/docs/antecedentes-carlos.pdf",
-          uploadDate: "2024-12-15"
+  useEffect(() => {
+    const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+    fetch(`${API}/api/verifications/pending/`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('auth_access') || ''}` }
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const arr = await r.json()
+        const mapped: ProfessionalDocument[] = arr.map((it: any) => ({
+          id: it.id_servicio_profesional,
+          professionalId: it.rut_usuario,
+          professionalName: `${it.nombres} ${it.apellidos}`.trim(),
+          professionalEmail: it.email,
+          specialty: it.categoria,
+          region: it.region || '',
+          commune: it.comuna || '',
+          submittedDate: (it.creado_en ? new Date(it.creado_en) : new Date()).toISOString(),
+          status: 'pending',
+          isFirstService: !!it.es_primer_servicio,
+          documents: (it.documentos || []).map((d: any) => ({
+            id: d.id_documento_profesional,
+            type: d.tipo_documento,
+            name: d.nombre_documento,
+            url: d.url_archivo,
+            uploadDate: d.subido_en || new Date().toISOString()
+          })),
+          personalInfo: { phone: it.telefono || '', experience: it.anos_experiencia, description: it.descripcion },
+        }))
+        setPendingVerifications(mapped)
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleApprove = async (serviceId: string) => {
+    const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+    try {
+      const r = await fetch(`${API}/api/verifications/service/${serviceId}/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('auth_access') || ''}`,
         },
-        {
-          id: "DOC-002",
-          type: "certificado",
-          name: "Certificado de Competencias Gasfitería",
-          url: "/docs/cert-gasfiteria-carlos.pdf",
-          uploadDate: "2024-12-15"
-        },
-        {
-          id: "DOC-004",
-          type: "experiencia",
-          name: "Carta de Recomendación - Empresa ABC",
-          url: "/docs/recomendacion-carlos.pdf",
-          uploadDate: "2024-12-15"
-        }
-      ],
-      personalInfo: {
-        phone: "+56 9 1234 5678",
-        experience: "5 años",
-        description: "Gasfiter con amplia experiencia en instalaciones residenciales y comerciales."
-      }
-    },
-    {
-      id: "VER-002",
-      professionalId: "PROF-002",
-      professionalName: "María López",
-      professionalEmail: "maria.lopez@email.com",
-      specialty: "Limpieza del Hogar",
-      region: "Región Metropolitana",
-      commune: "Providencia",
-      submittedDate: "2024-12-14",
-      status: "pending",
-      isFirstService: true, // Primera solicitud - incluye certificado de antecedentes
-      documents: [
-        {
-          id: "DOC-006",
-          type: "antecedentes",
-          name: "Certificado de Antecedentes",
-          url: "/docs/antecedentes-maria.pdf",
-          uploadDate: "2024-12-14"
-        },
-        {
-          id: "DOC-005",
-          type: "experiencia",
-          name: "Cartas de Recomendación de Clientes",
-          url: "/docs/recomendaciones-maria.pdf",
-          uploadDate: "2024-12-14"
-        }
-      ],
-      personalInfo: {
-        phone: "+56 9 8765 4321",
-        experience: "3 años",
-        description: "Especialista en limpieza profunda y mantenimiento del hogar."
-      }
-    },
-    {
-      id: "VER-003",
-      professionalId: "PROF-001",
-      professionalName: "Carlos Rodríguez",
-      professionalEmail: "carlos.rodriguez@email.com",
-      specialty: "Limpieza del Hogar",
-      region: "Región Metropolitana",
-      commune: "Santiago",
-      submittedDate: "2024-12-13",
-      status: "pending",
-      isFirstService: false, // Servicio adicional - NO incluye certificado de antecedentes
-      documents: [
-        {
-          id: "DOC-007",
-          type: "experiencia",
-          name: "Certificado de Curso Limpieza Profesional",
-          url: "/docs/cert-limpieza-carlos.pdf",
-          uploadDate: "2024-12-13"
-        },
-        {
-          id: "DOC-008",
-          type: "experiencia",
-          name: "Facturas de Trabajos de Limpieza Anteriores",
-          url: "/docs/facturas-limpieza-carlos.pdf",
-          uploadDate: "2024-12-13"
-        }
-      ],
-      personalInfo: {
-        phone: "+56 9 1234 5678",
-        experience: "2 años",
-        description: "Experiencia adicional en limpieza del hogar y oficinas."
-      }
-    },
-    {
-      id: "VER-004",
-      professionalId: "PROF-003",
-      professionalName: "Juan Pérez",
-      professionalEmail: "juan.perez@email.com",
-      specialty: "Jardinería",
-      region: "Región de Valparaíso",
-      commune: "Viña del Mar",
-      submittedDate: "2024-12-12",
-      status: "pending",
-      isFirstService: true, // Primera solicitud - incluye certificado de antecedentes
-      documents: [
-        {
-          id: "DOC-009",
-          type: "antecedentes",
-          name: "Certificado de Antecedentes",
-          url: "/docs/antecedentes-juan.pdf",
-          uploadDate: "2024-12-12"
-        },
-        {
-          id: "DOC-010",
-          type: "titulo",
-          name: "Título Técnico en Paisajismo",
-          url: "/docs/titulo-juan.pdf",
-          uploadDate: "2024-12-12"
-        },
-        {
-          id: "DOC-011",
-          type: "experiencia",
-          name: "Portfolio de Trabajos Realizados",
-          url: "/docs/portfolio-juan.pdf",
-          uploadDate: "2024-12-12"
-        }
-      ],
-      personalInfo: {
-        phone: "+56 9 5555 6666",
-        experience: "7 años",
-        description: "Jardinero profesional especializado en diseño y mantenimiento de jardines."
-      }
+        body: JSON.stringify({ action: 'approve' })
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setPendingVerifications(prev => prev.filter(p => p.id !== serviceId))
+      alert('Servicio aprobado')
+    } catch (e: any) {
+      alert('No se pudo aprobar: ' + (e?.message || 'Error'))
     }
-  ])
-
-  const handleApprove = (professionalId: string) => {
-    setPendingVerifications(prev => 
-      prev.map(prof => 
-        prof.id === professionalId 
-          ? { ...prof, status: "approved" as const }
-          : prof
-      )
-    )
-    // Simular borrado de documentos
-    setTimeout(() => {
-      setPendingVerifications(prev => 
-        prev.filter(prof => prof.id !== professionalId)
-      )
-    }, 2000)
-    alert("Profesional verificado exitosamente. Los documentos se eliminarán en 2 segundos.")
   }
 
-  const handleReject = (professionalId: string) => {
-    const reason = prompt("Ingresa la razón del rechazo:")
-    if (reason) {
-      setPendingVerifications(prev => 
-        prev.map(prof => 
-          prof.id === professionalId 
-            ? { ...prof, status: "rejected" as const }
-            : prof
-        )
-      )
-      alert(`Profesional rechazado. Motivo: ${reason}`)
+  const handleReject = async (serviceId: string) => {
+    const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+    const reason = prompt('Ingresa la razón del rechazo:') || ''
+    try {
+      const r = await fetch(`${API}/api/verifications/service/${serviceId}/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('auth_access') || ''}`,
+        },
+        body: JSON.stringify({ action: 'reject', reason })
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setPendingVerifications(prev => prev.filter(p => p.id !== serviceId))
+      alert('Servicio rechazado')
+    } catch (e: any) {
+      alert('No se pudo rechazar: ' + (e?.message || 'Error'))
     }
   }
 
@@ -477,7 +370,7 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
                               <Button
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setViewingDocument(document.id)}
+                                onClick={() => { setViewingDocument(document.id); setViewingDocUrl(document.url); setViewingDocName(document.name); }}
                                 className="flex-1 sm:flex-initial text-xs sm:text-sm"
                               >
                                 <Eye className="w-4 h-4 mr-1" />
@@ -586,24 +479,55 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
         </div>
       </div>
 
-      {/* Modal de Vista de Documento (simulado) */}
+      {/* Modal de Vista de Documento */}
       {viewingDocument && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden mx-4">
-            <div className="flex items-center justify-between p-3 sm:p-4 border-b">
-              <h3 className="font-medium text-sm sm:text-base">Vista de Documento</h3>
-              <Button variant="ghost" onClick={() => setViewingDocument(null)} size="sm">
-                <XCircle className="w-5 h-5" />
-              </Button>
+          <div className="bg-white rounded-lg max-w-6xl w-full max-h-[92vh] overflow-hidden mx-4 shadow-xl">
+            <div className="flex items-center justify-between p-3 sm:p-4 border-b bg-gray-50">
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="w-4 h-4 text-gray-600" />
+                <h3 className="font-medium text-sm sm:text-base truncate">{viewingDocName || 'Documento'}</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                {viewingDocUrl && (
+                  <Button variant="outline" size="sm" onClick={() => window.open(viewingDocUrl!, '_blank')}>
+                    <Download className="w-4 h-4 mr-1" /> Abrir en pestaña
+                  </Button>
+                )}
+                <Button variant="ghost" onClick={() => { setViewingDocument(null); setViewingDocUrl(null); setViewingDocName(null); }} size="sm">
+                  <XCircle className="w-5 h-5" />
+                </Button>
+              </div>
             </div>
-            <div className="p-6 sm:p-8 text-center">
-              <Image className="w-20 h-20 sm:w-24 sm:h-24 text-gray-300 mx-auto mb-4" />
-              <p className="text-gray-600 text-sm sm:text-base">
-                Vista previa del documento (simulada)
-              </p>
-              <p className="text-xs sm:text-sm text-gray-500 mt-2">
-                En producción aquí se mostraría el documento real
-              </p>
+            <div className="h-[70vh] sm:h-[80vh] bg-white">
+              {viewingDocUrl ? (
+                (() => {
+                  const url = viewingDocUrl
+                  const lower = url.toLowerCase()
+                  const isImage = lower.endsWith('.png') || lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.gif') || lower.endsWith('.webp')
+                  // Detect formats; fallback to iframe for non-image (PDF, DOCX, etc.)
+                  if (isImage) {
+                    return (
+                      <div className="w-full h-full flex items-center justify-center p-2 bg-gray-100">
+                        <img src={url} alt={viewingDocName || 'Documento'} className="max-w-full max-h-full object-contain rounded" />
+                      </div>
+                    )
+                  }
+                  // Para PDF u otros tipos, usar iframe; el navegador intentará mostrarlo o descargarlo
+                  return (
+                    <iframe
+                      key={url}
+                      src={url}
+                      className="w-full h-full bg-white"
+                      title={viewingDocName || 'Documento'}
+                    />
+                  )
+                })()
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-gray-500">
+                  No hay vista previa disponible.
+                </div>
+              )}
             </div>
           </div>
         </div>
