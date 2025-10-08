@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
+import { apiGetAuth, apiPutAuth } from "../../lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -141,6 +142,70 @@ export default function ProfessionalScheduleManagerAdvanced({
     })
     return schedules
   })
+
+  // Helper para normalizar plantillas semanales recibidas del backend (pueden venir incompletas)
+  const normalizeWeeklyTemplate = (input: any, fallback?: WeeklySchedule): WeeklySchedule => {
+    const fb = fallback || {
+      monday: { enabled: false, timeSlots: [] },
+      tuesday: { enabled: false, timeSlots: [] },
+      wednesday: { enabled: false, timeSlots: [] },
+      thursday: { enabled: false, timeSlots: [] },
+      friday: { enabled: false, timeSlots: [] },
+      saturday: { enabled: false, timeSlots: [] },
+      sunday: { enabled: false, timeSlots: [] },
+    }
+    const normDay = (day: any, fbDay: DaySchedule): DaySchedule => ({
+      enabled: (day?.enabled ?? fbDay.enabled ?? false),
+      timeSlots: Array.isArray(day?.timeSlots) ? day.timeSlots.map((s: any) => ({ start: s.start, end: s.end })) : (fbDay.timeSlots || []),
+    })
+    return {
+      monday: normDay(input?.monday, fb.monday),
+      tuesday: normDay(input?.tuesday, fb.tuesday),
+      wednesday: normDay(input?.wednesday, fb.wednesday),
+      thursday: normDay(input?.thursday, fb.thursday),
+      friday: normDay(input?.friday, fb.friday),
+      saturday: normDay(input?.saturday, fb.saturday),
+      sunday: normDay(input?.sunday, fb.sunday),
+    }
+  }
+
+  // Load schedule for the selected service from backend API
+  useEffect(() => {
+    const loadSchedule = async () => {
+      if (!selectedService) return
+      try {
+        const data = await apiGetAuth(`/api/schedule/${selectedService}/`)
+        setServiceSchedules(prev => ({
+          ...prev,
+          [selectedService]: {
+            serviceId: selectedService,
+            serviceName: prev[selectedService]?.serviceName || enabledServices.find(s => s.id === selectedService)?.categoryName || 'Servicio',
+            weeklyTemplate: normalizeWeeklyTemplate(
+              data.weekly_template,
+              prev[selectedService]?.weeklyTemplate || getDefaultWeeklySchedule()
+            ),
+            customAvailability: (data.unavailabilities || []).map((u: any) => ({
+              id: String(u.id),
+              type: 'unavailable',
+              startDate: new Date(u.start_date),
+              endDate: new Date(u.end_date),
+              reason: u.reason || '',
+            })),
+            customSchedulePeriods: (data.custom_periods || []).map((p: any) => ({
+              id: String(p.id),
+              name: p.name,
+              startDate: new Date(p.start_date),
+              endDate: new Date(p.end_date),
+              weeklySchedule: normalizeWeeklyTemplate(p.weekly_template, getDefaultWeeklySchedule()),
+            })),
+          }
+        }))
+      } catch (e) {
+        console.error('Failed to load schedule', e)
+      }
+    }
+    loadSchedule()
+  }, [selectedService])
 
   const daysOfWeek = [
     { key: 'monday', label: 'Lunes' },
@@ -392,71 +457,83 @@ export default function ProfessionalScheduleManagerAdvanced({
 
   // Funciones para horario semanal
   const toggleDay = (serviceId: string, day: keyof WeeklySchedule) => {
-    setServiceSchedules(prev => ({
-      ...prev,
-      [serviceId]: {
-        ...prev[serviceId],
-        weeklyTemplate: {
-          ...prev[serviceId].weeklyTemplate,
-          [day]: {
-            ...prev[serviceId].weeklyTemplate[day],
-            enabled: !prev[serviceId].weeklyTemplate[day].enabled,
-            timeSlots: !prev[serviceId].weeklyTemplate[day].enabled ? 
-              [{ start: "09:00", end: "18:00" }] : []
+    setServiceSchedules(prev => {
+      const current = prev[serviceId]?.weeklyTemplate?.[day] || { enabled: false, timeSlots: [] as TimeSlot[] }
+      const nextEnabled = !current.enabled
+      return ({
+        ...prev,
+        [serviceId]: {
+          ...prev[serviceId],
+          weeklyTemplate: {
+            ...prev[serviceId].weeklyTemplate,
+            [day]: {
+              ...current,
+              enabled: nextEnabled,
+              timeSlots: nextEnabled ? [{ start: "09:00", end: "18:00" }] : []
+            }
           }
         }
-      }
-    }))
+      })
+    })
   }
 
   const addTimeSlot = (serviceId: string, day: keyof WeeklySchedule) => {
-    setServiceSchedules(prev => ({
-      ...prev,
-      [serviceId]: {
-        ...prev[serviceId],
-        weeklyTemplate: {
-          ...prev[serviceId].weeklyTemplate,
-          [day]: {
-            ...prev[serviceId].weeklyTemplate[day],
-            timeSlots: [...prev[serviceId].weeklyTemplate[day].timeSlots, { start: "09:00", end: "18:00" }]
+    setServiceSchedules(prev => {
+      const current = prev[serviceId]?.weeklyTemplate?.[day] || { enabled: true, timeSlots: [] as TimeSlot[] }
+      return ({
+        ...prev,
+        [serviceId]: {
+          ...prev[serviceId],
+          weeklyTemplate: {
+            ...prev[serviceId].weeklyTemplate,
+            [day]: {
+              ...current,
+              timeSlots: [...current.timeSlots, { start: "09:00", end: "18:00" }]
+            }
           }
         }
-      }
-    }))
+      })
+    })
   }
 
   const removeTimeSlot = (serviceId: string, day: keyof WeeklySchedule, index: number) => {
-    setServiceSchedules(prev => ({
-      ...prev,
-      [serviceId]: {
-        ...prev[serviceId],
-        weeklyTemplate: {
-          ...prev[serviceId].weeklyTemplate,
-          [day]: {
-            ...prev[serviceId].weeklyTemplate[day],
-            timeSlots: prev[serviceId].weeklyTemplate[day].timeSlots.filter((_, i) => i !== index)
+    setServiceSchedules(prev => {
+      const current = prev[serviceId]?.weeklyTemplate?.[day] || { enabled: true, timeSlots: [] as TimeSlot[] }
+      return ({
+        ...prev,
+        [serviceId]: {
+          ...prev[serviceId],
+          weeklyTemplate: {
+            ...prev[serviceId].weeklyTemplate,
+            [day]: {
+              ...current,
+              timeSlots: current.timeSlots.filter((_, i) => i !== index)
+            }
           }
         }
-      }
-    }))
+      })
+    })
   }
 
   const updateTimeSlot = (serviceId: string, day: keyof WeeklySchedule, index: number, field: 'start' | 'end', value: string) => {
-    setServiceSchedules(prev => ({
-      ...prev,
-      [serviceId]: {
-        ...prev[serviceId],
-        weeklyTemplate: {
-          ...prev[serviceId].weeklyTemplate,
-          [day]: {
-            ...prev[serviceId].weeklyTemplate[day],
-            timeSlots: prev[serviceId].weeklyTemplate[day].timeSlots.map((slot, i) => 
-              i === index ? { ...slot, [field]: value } : slot
-            )
+    setServiceSchedules(prev => {
+      const current = prev[serviceId]?.weeklyTemplate?.[day] || { enabled: true, timeSlots: [] as TimeSlot[] }
+      return ({
+        ...prev,
+        [serviceId]: {
+          ...prev[serviceId],
+          weeklyTemplate: {
+            ...prev[serviceId].weeklyTemplate,
+            [day]: {
+              ...current,
+              timeSlots: current.timeSlots.map((slot, i) => 
+                i === index ? { ...slot, [field]: value } : slot
+              )
+            }
           }
         }
-      }
-    }))
+      })
+    })
   }
 
   // Copiar horario entre servicios
@@ -554,7 +631,7 @@ export default function ProfessionalScheduleManagerAdvanced({
     if (!selectedService) return
     setPeriodForm(prev => ({
       ...prev,
-      weeklySchedule: { ...serviceSchedules[selectedService].weeklyTemplate }
+      weeklySchedule: normalizeWeeklyTemplate(serviceSchedules[selectedService].weeklyTemplate, getDefaultWeeklySchedule())
     }))
   }
 
@@ -616,11 +693,31 @@ export default function ProfessionalScheduleManagerAdvanced({
 
   const handleSave = async () => {
     setIsSaving(true)
-    // Simular guardado
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    setIsSaving(false)
-    setSaveSuccess(true)
-    setTimeout(() => setSaveSuccess(false), 3000)
+    try {
+      if (!selectedService) return
+      const sched = serviceSchedules[selectedService]
+      const payload = {
+        weekly_template: sched.weeklyTemplate,
+        unavailabilities: sched.customAvailability.map(a => ({
+          start_date: a.startDate.toISOString().slice(0,10),
+          end_date: a.endDate.toISOString().slice(0,10),
+          reason: a.reason || '',
+        })),
+        custom_periods: sched.customSchedulePeriods.map(p => ({
+          name: p.name,
+          start_date: p.startDate.toISOString().slice(0,10),
+          end_date: p.endDate.toISOString().slice(0,10),
+          weekly_template: p.weeklySchedule,
+        })),
+      }
+      await apiPutAuth(`/api/schedule/${selectedService}/`, payload)
+      setIsSaving(false)
+      setSaveSuccess(true)
+      setTimeout(() => setSaveSuccess(false), 3000)
+    } catch (e) {
+      setIsSaving(false)
+      console.error('Save schedule failed', e)
+    }
   }
 
   if (enabledServices.length === 0) {

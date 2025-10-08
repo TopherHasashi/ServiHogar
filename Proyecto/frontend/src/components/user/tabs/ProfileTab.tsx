@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../ui/card"
 import { Button } from "../../ui/button"
 import { Input } from "../../ui/input"
@@ -14,6 +14,8 @@ import {
   Phone,
   MapPin
 } from "lucide-react"
+import { apiGet, apiPutAuth, apiPostForm } from "../../../lib/api"
+import { useAuth } from "../../../lib/auth"
 
 interface ProfileTabProps {
   user: any
@@ -21,67 +23,166 @@ interface ProfileTabProps {
 }
 
 export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
+  const { refreshUser } = useAuth()
   const [editingProfile, setEditingProfile] = useState(false)
   const [tempUserData, setTempUserData] = useState<any>({})
+  // Determinar estado profesional desde el rol efectivo cuando esté disponible
+  const isProfessional = (user?.effective_role
+    ? (user.effective_role === 'profesional' || user.effective_role === 'administrador')
+    : !!user?.isProfessional)
+  // Datos dinámicos de regiones/comunas
+  const [regions, setRegions] = useState<Array<{ id: string; nombre: string; codigo?: string }>>([])
+  const [communes, setCommunes] = useState<Array<{ id: string; nombre: string; codigo?: string; region_id?: string }>>([])
+  const [loadingRegions, setLoadingRegions] = useState<boolean>(false)
+  const [loadingCommunes, setLoadingCommunes] = useState<boolean>(false)
 
-  // Regiones de Chile
-  const regions = [
-    "Región Metropolitana",
-    "Región de Valparaíso", 
-    "Región del Biobío",
-    "Región de la Araucanía",
-    "Región de Los Lagos",
-    "Región de Antofagasta",
-    "Región de Atacama",
-    "Región de Coquimbo",
-    "Región del Libertador",
-    "Región del Maule",
-    "Región de Aysén",
-    "Región de Magallanes",
-    "Región de Arica y Parinacota",
-    "Región de Tarapacá",
-    "Región de Ñuble"
-  ]
+  // Cargar regiones al montar
+  useEffect(() => {
+    let ignore = false
+    setLoadingRegions(true)
+    apiGet('/api/geo/regiones/')
+      .then((data: any) => {
+        if (ignore) return
+        const list = Array.isArray(data) ? data : []
+        setRegions(list.map((r: any) => ({ id: String(r.id), nombre: r.nombre, codigo: r.codigo })))
+      })
+      .catch(() => {})
+      .finally(() => { if (!ignore) setLoadingRegions(false) })
+    return () => { ignore = true }
+  }, [])
 
-  const regionsAndCommunes = {
-    "Región Metropolitana": ["Santiago", "Las Condes", "Providencia", "Ñuñoa", "La Reina", "Vitacura", "San Miguel", "Maipú", "Puente Alto", "San Bernardo"],
-    "Región de Valparaíso": ["Valparaíso", "Viña del Mar", "Quilpué", "Villa Alemana", "Concón", "San Antonio"],
-    "Región del Biobío": ["Concepción", "Talcahuano", "Chillán", "Los Ángeles", "Coronel"],
-    "Región de la Araucanía": ["Temuco", "Villarrica", "Pucón", "Angol"],
-    "Región de Los Lagos": ["Puerto Montt", "Osorno", "Valdivia", "Castro"],
-    "Región de Antofagasta": ["Antofagasta", "Calama", "Tocopilla"],
-    "Región de Atacama": ["Copiapó", "Vallenar"],
-    "Región de Coquimbo": ["La Serena", "Coquimbo", "Ovalle"],
-    "Región del Libertador": ["Rancagua", "San Fernando", "Rengo"],
-    "Región del Maule": ["Talca", "Curicó", "Linares"],
-    "Región de Aysén": ["Coyhaique", "Puerto Aysén"],
-    "Región de Magallanes": ["Punta Arenas", "Puerto Natales"],
-    "Región de Arica y Parinacota": ["Arica", "Putre"],
-    "Región de Tarapacá": ["Iquique", "Alto Hospicio"],
-    "Región de Ñuble": ["Chillán", "San Carlos"]
-  }
+  // Preselección inicial: si el usuario tiene dominio.id_comuna, obtener comuna y su región para setear IDs
+  useEffect(() => {
+    const dominio = (user as any)?.dominio
+    const idComuna = dominio?.id_comuna
+    if (!editingProfile && idComuna) {
+      // Cargar comuna por ID para conocer region_id
+      apiGet(`/api/geo/comunas/?comuna_id=${encodeURIComponent(idComuna)}`)
+        .then((data: any) => {
+          const c = Array.isArray(data) && data.length > 0 ? data[0] : null
+          if (c) {
+            setTempUserData((prev: any) => ({
+              ...prev,
+              regionId: String(c.region_id || ''),
+              communeId: String(c.id),
+              region: user.region || '',
+              commune: user.commune || '',
+            }))
+          }
+        })
+        .catch(() => {})
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.dominio?.id_comuna, editingProfile])
 
-  const getAvailableCommunes = () => {
-    if (!tempUserData.region) return []
-    return regionsAndCommunes[tempUserData.region as keyof typeof regionsAndCommunes] || []
-  }
+  // Si ya hay región por nombre y no hay ID, intentar mapear cuando haya regiones cargadas (al entrar a editar)
+  useEffect(() => {
+    if (!editingProfile) return
+    if (!tempUserData.regionId && tempUserData.region && regions.length > 0) {
+      const found = regions.find(r => r.nombre === tempUserData.region)
+      if (found) {
+        setTempUserData((prev: any) => ({ ...prev, regionId: found.id }))
+      }
+    }
+  }, [editingProfile, tempUserData.region, tempUserData.regionId, regions])
 
-  const handleStartEditUserProfile = () => {
-    setTempUserData({
+  // Cargar comunas cuando cambie regionId en edición
+  useEffect(() => {
+    let ignore = false
+    setCommunes([])
+    if (!editingProfile) return
+    const rid = tempUserData.regionId
+    if (!rid) return
+    setLoadingCommunes(true)
+    apiGet(`/api/geo/comunas/?region_id=${encodeURIComponent(rid)}`)
+      .then((data: any) => {
+        if (ignore) return
+        const list = Array.isArray(data) ? data : []
+        setCommunes(list.map((c: any) => ({ id: String(c.id), nombre: c.nombre, codigo: c.codigo, region_id: String(c.region_id || '') })))
+      })
+      .catch(() => {})
+      .finally(() => { if (!ignore) setLoadingCommunes(false) })
+    return () => { ignore = true }
+  }, [editingProfile, tempUserData.regionId])
+
+  // Si hay comuna por nombre y no hay ID, mapear cuando se carguen comunas
+  useEffect(() => {
+    if (!editingProfile) return
+    if (!tempUserData.communeId && tempUserData.commune && communes.length > 0) {
+      const found = communes.find(c => c.nombre === tempUserData.commune)
+      if (found) {
+        setTempUserData((prev: any) => ({ ...prev, communeId: found.id }))
+      }
+    }
+  }, [editingProfile, tempUserData.commune, tempUserData.communeId, communes])
+
+  const handleStartEditUserProfile = async () => {
+    const base = {
       name: user.name,
       email: user.email,
       phone: user.phone || "",
       address: user.address || "",
       region: user.region || "",
-      commune: user.commune || ""
-    })
+      commune: user.commune || "",
+      regionId: tempUserData.regionId || "",
+      communeId: tempUserData.communeId || "",
+    }
+    // Si no tenemos IDs aún y existe dominio.id_comuna, traer comuna para obtener region_id
+    const dominio = (user as any)?.dominio
+    const idComuna = dominio?.id_comuna
+    let preload = { ...base }
+    try {
+      if ((!preload.regionId || !preload.communeId) && idComuna) {
+        const data = await apiGet(`/api/geo/comunas/?comuna_id=${encodeURIComponent(idComuna)}`)
+        const c = Array.isArray(data) && data.length > 0 ? data[0] : null
+        if (c) {
+          preload.regionId = String(c.region_id || '')
+          preload.communeId = String(c.id)
+        }
+      }
+    } catch {}
+    setTempUserData(preload)
     setEditingProfile(true)
   }
 
-  const handleUpdateUserData = () => {
-    onUpdateUser(tempUserData)
-    setEditingProfile(false)
-    setTempUserData({})
+  // Subir avatar y refrescar usuario
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const fd = new FormData()
+    fd.append('file', file)
+    try {
+      await apiPostForm('/api/auth/me/avatar/', fd, { auth: true })
+      await refreshUser()
+      alert('Avatar actualizado')
+    } catch (err: any) {
+      alert('No se pudo actualizar el avatar: ' + (err?.message || 'Error'))
+    }
+  }
+
+  const handleUpdateUserData = async () => {
+    try {
+      const payload: any = {
+        name: tempUserData.name,
+        email: tempUserData.email,
+        phone: tempUserData.phone,
+        address: tempUserData.address,
+        gender: tempUserData.gender,
+        birth_date: tempUserData.birth_date,
+      }
+      if (tempUserData.regionId) payload.region_id = tempUserData.regionId
+      if (tempUserData.communeId) payload.comuna_id = tempUserData.communeId
+  // Actualizar en backend (PUT)
+  await apiPutAuth('/api/auth/me/update/', payload)
+      // Refrescar sesión de usuario
+      await refreshUser()
+      onUpdateUser?.(payload)
+      setEditingProfile(false)
+      setTempUserData({})
+      alert('Perfil actualizado')
+    } catch (e: any) {
+      alert('No se pudo actualizar el perfil: ' + (e?.message || 'Error desconocido'))
+    }
   }
 
   const handleCancelUserEdit = () => {
@@ -89,11 +190,14 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
     setTempUserData({})
   }
 
-  const handleRegionChange = (value: string) => {
-  setTempUserData((prev: any) => ({
+  const handleRegionChange = (regionId: string) => {
+    const regionName = regions.find(r => r.id === regionId)?.nombre || ""
+    setTempUserData((prev: any) => ({
       ...prev,
-      region: value,
-      commune: "" // Limpiar comuna cuando cambia región
+      regionId,
+      region: regionName,
+      communeId: "",
+      commune: ""
     }))
   }
 
@@ -111,17 +215,25 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
       <CardContent className="space-y-6">
         {/* Avatar y información básica */}
         <div className="flex items-center gap-6">
-          <Avatar className="w-24 h-24">
-            <AvatarImage src={user.avatar} alt={user.name} />
-            <AvatarFallback className="text-xl">
-              <User className="w-8 h-8" />
-            </AvatarFallback>
-          </Avatar>
+          <div className="flex flex-col items-center gap-2">
+            <Avatar className="w-24 h-24">
+              <AvatarImage src={user.avatar || user.profile?.avatar_url} alt={user.name} />
+              <AvatarFallback className="text-xl">
+                <User className="w-8 h-8" />
+              </AvatarFallback>
+            </Avatar>
+            {editingProfile && (
+              <label className="text-xs text-blue-600 hover:underline cursor-pointer">
+                Cambiar foto
+                <input type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
+              </label>
+            )}
+          </div>
           <div>
             <h3 className="text-xl font-semibold">{user.name}</h3>
             <p className="text-gray-600">{user.email}</p>
             <div className="mt-2">
-              {user.isProfessional ? (
+              {isProfessional ? (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                   Profesional Verificado
                 </span>
@@ -181,37 +293,46 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Región</Label>
-                <Select value={tempUserData.region} onValueChange={handleRegionChange}>
+                <Select value={tempUserData.regionId || ""} onValueChange={handleRegionChange}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona una región" />
                   </SelectTrigger>
                   <SelectContent>
-                    {regions.map((region) => (
-                      <SelectItem key={region} value={region}>
-                        {region}
+                    {regions.map((r) => (
+                      <SelectItem key={r.id} value={r.id}>
+                        {r.nombre}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {loadingRegions && (
+                  <p className="text-xs text-gray-500">Cargando regiones...</p>
+                )}
               </div>
               <div className="space-y-2">
                 <Label>Comuna</Label>
                 <Select 
-                  value={tempUserData.commune} 
-                  onValueChange={(value) => setTempUserData((prev: any) => ({ ...prev, commune: value }))}
-                  disabled={!tempUserData.region}
+                  value={tempUserData.communeId || ""}
+                  onValueChange={(communeId) => {
+                    const communeName = communes.find(c => c.id === communeId)?.nombre || ""
+                    setTempUserData((prev: any) => ({ ...prev, communeId, commune: communeName }))
+                  }}
+                  disabled={!tempUserData.regionId}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona una comuna" />
                   </SelectTrigger>
                   <SelectContent>
-                    {getAvailableCommunes().map((commune) => (
-                      <SelectItem key={commune} value={commune}>
-                        {commune}
+                    {communes.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.nombre}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {loadingCommunes && (
+                  <p className="text-xs text-gray-500">Cargando comunas...</p>
+                )}
               </div>
             </div>
 
@@ -291,7 +412,7 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
             </div>
             <div>
               <span className="text-gray-500">Tipo de cuenta:</span>
-              <span className="ml-2">{user.isProfessional ? "Profesional" : "Cliente"}</span>
+              <span className="ml-2">{isProfessional ? "Profesional" : "Cliente"}</span>
             </div>
           </div>
         </div>

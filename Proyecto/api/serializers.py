@@ -1,6 +1,6 @@
 from django.contrib.auth.models import User
 from rest_framework import serializers
-from .models import Profile
+from .models import Profile, UsuarioDominio
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -14,6 +14,7 @@ class ProfileSerializer(serializers.ModelSerializer):
             "region",
             "district",
             "address",
+            "avatar_url",
             "role",
         ]
 
@@ -46,6 +47,47 @@ class UserSerializer(serializers.ModelSerializer):
         ]
 
 
+class TimeSlotSerializer(serializers.Serializer):
+    start = serializers.CharField()
+    end = serializers.CharField()
+
+
+class DayScheduleSerializer(serializers.Serializer):
+    enabled = serializers.BooleanField()
+    timeSlots = TimeSlotSerializer(many=True)
+
+
+class WeeklyTemplateSerializer(serializers.Serializer):
+    monday = DayScheduleSerializer(required=False)
+    tuesday = DayScheduleSerializer(required=False)
+    wednesday = DayScheduleSerializer(required=False)
+    thursday = DayScheduleSerializer(required=False)
+    friday = DayScheduleSerializer(required=False)
+    saturday = DayScheduleSerializer(required=False)
+    sunday = DayScheduleSerializer(required=False)
+
+
+class UnavailabilitySerializer(serializers.Serializer):
+    id = serializers.IntegerField(required=False)
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    reason = serializers.CharField(required=False, allow_blank=True)
+
+
+class CustomPeriodSerializer(serializers.Serializer):
+    id = serializers.IntegerField(required=False)
+    name = serializers.CharField()
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    weekly_template = WeeklyTemplateSerializer()
+
+
+class ServiceScheduleSerializer(serializers.Serializer):
+    weekly_template = WeeklyTemplateSerializer()
+    unavailabilities = UnavailabilitySerializer(many=True)
+    custom_periods = CustomPeriodSerializer(many=True)
+
+
 class RegisterSerializer(serializers.Serializer):
     first_name = serializers.CharField(required=True, max_length=150)
     last_name = serializers.CharField(required=True, max_length=150)
@@ -56,14 +98,23 @@ class RegisterSerializer(serializers.Serializer):
     rut = serializers.CharField(required=True, allow_blank=False, max_length=20)
     gender = serializers.CharField(required=True, allow_blank=False, max_length=32)
     birth_date = serializers.DateField(required=True)
-    region = serializers.CharField(required=True, allow_blank=False, max_length=100)
-    district = serializers.CharField(required=True, allow_blank=False, max_length=100)
+    # Preferimos comuna_id (UUID). Si no viene, aceptamos region + district por nombre
+    comuna_id = serializers.UUIDField(required=False, allow_null=True)
+    region = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    district = serializers.CharField(required=False, allow_blank=True, max_length=100)
     address = serializers.CharField(required=True, allow_blank=False, max_length=255)
     role = serializers.ChoiceField(choices=[("cliente", "Cliente"), ("profesional", "Profesional")], required=False)
 
     def validate_email(self, value):
         if User.objects.filter(username=value).exists() or User.objects.filter(email=value).exists():
             raise serializers.ValidationError("Ya existe un usuario con este email")
+        # Validar también contra la tabla principal de dominio `usuario`
+        try:
+            if UsuarioDominio.objects.filter(email=value).exists():
+                raise serializers.ValidationError("Este email ya está registrado en el sistema principal. Inicia sesión o recupera tu contraseña.")
+        except Exception:
+            # Si falla la consulta (por ejemplo, DB no disponible), no bloquear aquí; la vista validará de nuevo
+            pass
         return value
 
     def validate_rut(self, value):
@@ -78,6 +129,27 @@ class RegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError("Formato de RUT inválido (ej: 12.345.678-9)")
         return v
 
+    def validate_gender(self, value):
+        v = (value or '').strip().lower()
+        if v in {"masculino", "femenino", "no_binario"}:
+            return v
+        if v in {"otro", "prefiero-no-decir", "no binario", "nobinario", "no-binario"}:
+            return "no_binario"
+        raise serializers.ValidationError("Género inválido. Use: masculino, femenino, no_binario")
+
+    def validate(self, attrs):
+        # Debe venir comuna_id o bien region + district
+        comuna_id = attrs.get("comuna_id")
+        region = (attrs.get("region") or "").strip()
+        district = (attrs.get("district") or "").strip()
+        if not comuna_id and (not region or not district):
+            raise serializers.ValidationError({
+                "comuna_id": "Requerido si no se envía región y comuna por nombre",
+                "region": "Requerido si no se envía comuna_id",
+                "district": "Requerido si no se envía comuna_id",
+            })
+        return attrs
+
     def create(self, validated_data):
         # Pop profile fields
         phone = validated_data.pop("phone", "")
@@ -86,6 +158,7 @@ class RegisterSerializer(serializers.Serializer):
         birth_date = validated_data.pop("birth_date", None)
         region = validated_data.pop("region", "")
         district = validated_data.pop("district", "")
+        comuna_id = validated_data.pop("comuna_id", None)
         address = validated_data.pop("address", "")
         role = validated_data.pop("role", "cliente")
 
@@ -112,4 +185,8 @@ class RegisterSerializer(serializers.Serializer):
         profile.address = address
         profile.role = role or "cliente"
         profile.save()
+        # Guardamos comuna_id en el serializer para que la vista lo use en el upsert
+        self._saved_user = user
+        self._saved_comuna_id = str(comuna_id) if comuna_id else None
+        self._saved_rut = rut
         return user

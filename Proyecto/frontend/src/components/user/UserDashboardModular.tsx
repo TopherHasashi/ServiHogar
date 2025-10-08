@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "../ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar"
@@ -6,6 +6,7 @@ import SearchTab from "./tabs/SearchTab"
 import RequestsTab from "./tabs/RequestsTab"
 import ProfileTab from "./tabs/ProfileTab"
 import ProfessionalTabMultiService from "./tabs/ProfessionalTabMultiService"
+import { apiGetAuth, apiPost, apiPostForm } from "../../lib/api"
 import { 
   User, 
   LogOut, 
@@ -21,6 +22,9 @@ interface UserDashboardProps {
 
 export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
   const [activeTab, setActiveTab] = useState("search")
+  // Estado de solicitud profesional: none | pending | rejected | approved
+  const [professionalStatus, setProfessionalStatus] = useState<'none' | 'pending' | 'rejected' | 'approved'>('none')
+  const [rejectionReason, setRejectionReason] = useState<string | null>(null)
 
   // Datos simulados de solicitudes de servicios como CLIENTE
   const [serviceRequests, setServiceRequests] = useState([
@@ -150,347 +154,83 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
     } : null
   )
 
-  // Datos simulados de profesionales para la búsqueda
-  const professionals = [
-    // GASFITERÍA
-    {
-      id: "PROF-001",
-      name: "Juan Carlos Pérez",
-      service: "Gasfitería",
-      rating: 4.8,
-      reviews: 124,
-      region: "Región Metropolitana",
-      commune: "Santiago",
-      location: "Santiago, RM",
-      basePrice: 25000,
-      priceDisplay: "Desde $25.000",
-      experience: "5 años",
-      phone: "+56 9 8888 1111",
-      email: "juan.perez@email.com",
-      description: "Gasfiter profesional especializado en instalaciones y reparaciones de cañerías, grifería y calefont.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 34,
-      durationType: "fixed" as const,
-      fixedDuration: 60,
-      pricePerHour: 25000
-    },
-    {
-      id: "PROF-004",
-      name: "Diego Morales",
-      service: "Gasfitería",
-      rating: 4.6,
-      reviews: 87,
-      region: "Región Metropolitana",
-      commune: "Ñuñoa",
-      location: "Ñuñoa, RM",
-      basePrice: 28000,
-      priceDisplay: "Desde $28.000",
-      experience: "4 años",
-      phone: "+56 9 5555 4444",
-      email: "diego.morales@email.com",
-      description: "Gasfiter especializado en instalaciones domiciliarias, tableros de gas y sistemas de calefacción.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 29,
-      durationType: "fixed" as const,
-      fixedDuration: 90,
-      pricePerHour: 28000
-    },
-    {
-      id: "PROF-007",
-      name: "Ricardo Fuentes",
-      service: "Gasfitería",
-      rating: 4.9,
-      reviews: 203,
-      region: "Región de Valparaíso",
-      commune: "Valparaíso",
-      location: "Valparaíso, V",
-      basePrice: 30000,
-      priceDisplay: "Desde $30.000",
-      experience: "8 años",
-      phone: "+56 9 2222 7777",
-      email: "ricardo.fuentes@email.com",
-      description: "Maestro gasfiter con experiencia en obras complejas, instalaciones industriales y reparaciones de emergencia.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 41,
-      durationType: "range" as const,
-      minDuration: 60,
-      maxDuration: 360,
-      pricePerHour: 32000
-    },
-    {
-      id: "PROF-010",
-      name: "Andrés Soto",
-      service: "Gasfitería",
-      rating: 4.5,
-      reviews: 156,
-      region: "Región Metropolitana",
-      commune: "Maipú",
-      location: "Maipú, RM",
-      basePrice: 22000,
-      priceDisplay: "Desde $22.000",
-      experience: "6 años",
-      phone: "+56 9 1111 8888",
-      email: "andres.soto@email.com",
-      description: "Gasfiter especializado en reparaciones domiciliarias, cambio de llaves y mantención de calefont.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 35,
-      durationType: "fixed" as const,
-      fixedDuration: 120,
-      pricePerHour: 22000
-    },
+  // Cargar estado real del perfil/servicios del usuario y decidir si habilitar panel profesional
+  useEffect(() => {
+    let ignore = false
+    ;(async () => {
+      try {
+        const data = await apiGetAuth('/api/my/services/')
+        if (ignore) return
+        const normalizeStatus = (v: any): 'pending' | 'approved' | 'rejected' | 'suspended' => {
+          const s = (typeof v === 'string' ? v : '').toLowerCase()
+          if (s === 'aprobado' || s === 'approved') return 'approved'
+          if (s === 'rechazado' || s === 'rejected') return 'rejected'
+          if (s === 'suspendido' || s === 'suspended') return 'suspended'
+          return 'pending'
+        }
+        // Construir perfil mínimo desde datos reales (solo si ya está aprobado)
+        const mappedServices = (data.servicios || []).map((s: any) => ({
+          id: s.id_servicio_profesional,
+          categoryId: s.categoria, // solo nombre por ahora
+          categoryName: s.categoria,
+          experience: s.anos_experiencia,
+          description: s.descripcion,
+          durationType: s.tipo_duracion,
+          fixedDuration: s.duracion_fija_minutos,
+          minDuration: s.duracion_minima_minutos,
+          maxDuration: s.duracion_maxima_minutos,
+          priceFixed: s.precio_fijo,
+          // Visibilidad en buscador controlada por backend; si no viene, fallback a aprobado
+          isActive: (typeof s.visible === 'boolean') ? !!s.visible : (s.estado_verificacion === 'aprobado'),
+          isAvailable: s.estado_verificacion === 'aprobado',
+          verificationStatus: normalizeStatus(s.estado_verificacion),
+          razon_rechazo: s.razon_rechazo,
+          rating: 0,
+          completedJobs: 0,
+          totalEarnings: 0,
+        }))
+        const estadoRaw: string | null = data.estado_general || null
+        const estado = (estadoRaw || '').toLowerCase()
+        if (estado === 'aprobado' || estado === 'approved') {
+          const profile = {
+            id: 'profile-remote',
+            userId: user.id,
+            generalDescription: '',
+            generalVerificationStatus: 'approved' as const,
+            averageRating: 0,
+            totalJobs: 0,
+            totalEarnings: 0,
+            isActive: true,
+            acceptsNewJobs: true,
+            services: mappedServices,
+          }
+          setUserProfessionalProfile(profile as any)
+          setProfessionalStatus('approved')
+          user.isProfessional = true
+          setRejectionReason(null)
+        } else if (estado === 'pendiente' || estado === 'pending') {
+          setProfessionalStatus('pending')
+          setUserProfessionalProfile(null)
+          setRejectionReason(null)
+        } else if (estado === 'rechazado' || estado === 'rejected') {
+          setProfessionalStatus('rejected')
+          setUserProfessionalProfile(null)
+          // Tomar el motivo del último servicio rechazado si existe
+          const rej = mappedServices.find((s: any) => s.verificationStatus === 'rechazado' && s.razon_rechazo)
+          setRejectionReason(rej?.razon_rechazo || 'Solicitud rechazada por verificación')
+        } else {
+          setProfessionalStatus('none')
+          setUserProfessionalProfile(null)
+          setRejectionReason(null)
+        }
+      } catch {
+        // Si 400 (no tiene usuario en dominio) o 401, ignorar
+      }
+    })()
+    return () => { ignore = true }
+  }, [])
 
-    // LIMPIEZA DEL HOGAR
-    {
-      id: "PROF-002", 
-      name: "María Elena González",
-      service: "Limpieza del Hogar",
-      rating: 4.9,
-      reviews: 98,
-      region: "Región Metropolitana",
-      commune: "Las Condes",
-      location: "Las Condes, RM",
-      basePrice: 18000,
-      priceDisplay: "Desde $18.000",
-      experience: "8 años",
-      phone: "+56 9 7777 2222",
-      email: "maria.gonzalez@email.com",
-      description: "Especialista en limpieza profunda, mantenimiento de hogar y organización de espacios.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 42,
-      durationType: "range" as const,
-      minDuration: 120,
-      maxDuration: 480,
-      pricePerHour: 12000
-    },
-    {
-      id: "PROF-005",
-      name: "Carmen Rivas",
-      service: "Limpieza del Hogar",
-      rating: 4.7,
-      reviews: 73,
-      region: "Región de Valparaíso",
-      commune: "Viña del Mar",
-      location: "Viña del Mar, V",
-      basePrice: 16000,
-      priceDisplay: "Desde $16.000",
-      experience: "5 años",
-      phone: "+56 9 4444 5555",
-      email: "carmen.rivas@email.com",
-      description: "Profesional en limpieza y desinfección, especializada en limpieza post construcción y eventos.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 38,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 600,
-      pricePerHour: 14000
-    },
-    {
-      id: "PROF-008",
-      name: "Isabel Torres",
-      service: "Limpieza del Hogar",
-      rating: 4.8,
-      reviews: 145,
-      region: "Región Metropolitana",
-      commune: "Providencia",
-      location: "Providencia, RM",
-      basePrice: 20000,
-      priceDisplay: "Desde $20.000",
-      experience: "6 años",
-      phone: "+56 9 3333 9999",
-      email: "isabel.torres@email.com",
-      description: "Experta en limpieza de oficinas y hogares, con certificación en manejo de productos ecológicos.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 33,
-      durationType: "range" as const,
-      minDuration: 120,
-      maxDuration: 420,
-      pricePerHour: 15000
-    },
-    {
-      id: "PROF-011",
-      name: "Rosa Moreno",
-      service: "Limpieza del Hogar",
-      rating: 4.6,
-      reviews: 89,
-      region: "Región del Biobío",
-      commune: "Concepción",
-      location: "Concepción, VIII",
-      basePrice: 15000,
-      priceDisplay: "Desde $15.000",
-      experience: "4 años",
-      phone: "+56 9 6666 4444",
-      email: "rosa.moreno@email.com",
-      description: "Especialista en limpieza de departamentos y casas, con experiencia en limpieza de mudanzas.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 45,
-      durationType: "range" as const,
-      minDuration: 150,
-      maxDuration: 480,
-      pricePerHour: 13000
-    },
-    {
-      id: "PROF-014",
-      name: "Lucia Vargas",
-      service: "Limpieza del Hogar",
-      rating: 4.9,
-      reviews: 167,
-      region: "Región Metropolitana",
-      commune: "Vitacura",
-      location: "Vitacura, RM",
-      basePrice: 22000,
-      priceDisplay: "Desde $22.000",
-      experience: "9 años",
-      phone: "+56 9 8888 3333",
-      email: "lucia.vargas@email.com",
-      description: "Profesional premium en limpieza y organización del hogar, especializada en casas de alto nivel.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 39,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 540,
-      pricePerHour: 18000
-    },
-
-    // JARDINERÍA
-    {
-      id: "PROF-003",
-      name: "Carlos Rodríguez",
-      service: "Jardinería",
-      rating: 4.7,
-      reviews: 156,
-      region: "Región Metropolitana",
-      commune: "Providencia",
-      location: "Providencia, RM",
-      basePrice: 30000,
-      priceDisplay: "Desde $30.000",
-      experience: "6 años",
-      phone: "+56 9 6666 3333",
-      email: "carlos.rodriguez@email.com",
-      description: "Jardinero profesional con experiencia en diseño, mantención y podas de jardines.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 38,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 480,
-      pricePerHour: 15000
-    },
-    {
-      id: "PROF-006",
-      name: "Patricia Silva",
-      service: "Jardinería",
-      rating: 4.8,
-      reviews: 112,
-      region: "Región del Biobío",
-      commune: "Concepción",
-      location: "Concepción, VIII",
-      basePrice: 25000,
-      priceDisplay: "Desde $25.000",
-      experience: "7 años",
-      phone: "+56 9 3333 6666",
-      email: "patricia.silva@email.com",
-      description: "Paisajista especializada en diseño y mantención de jardines, poda de árboles y césped.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 37,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 540,
-      pricePerHour: 20000
-    },
-    {
-      id: "PROF-009",
-      name: "Fernando López",
-      service: "Jardinería",
-      rating: 4.5,
-      reviews: 94,
-      region: "Región de los Lagos",
-      commune: "Puerto Montt",
-      location: "Puerto Montt, X",
-      basePrice: 28000,
-      priceDisplay: "Desde $28.000",
-      experience: "5 años",
-      phone: "+56 9 7777 1111",
-      email: "fernando.lopez@email.com",
-      description: "Especialista en mantención de jardines, sistemas de riego y plantas ornamentales.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 43,
-      durationType: "range" as const,
-      minDuration: 240,
-      maxDuration: 480,
-      pricePerHour: 22000
-    },
-    {
-      id: "PROF-012",
-      name: "Miguel Herrera",
-      service: "Jardinería",
-      rating: 4.6,
-      reviews: 128,
-      region: "Región Metropolitana",
-      commune: "La Reina",
-      location: "La Reina, RM",
-      basePrice: 32000,
-      priceDisplay: "Desde $32.000",
-      experience: "8 años",
-      phone: "+56 9 5555 7777",
-      email: "miguel.herrera@email.com",
-      description: "Jardinero experto en diseño paisajístico, mantención de piscinas y áreas verdes residenciales.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "masculino",
-      age: 40,
-      durationType: "range" as const,
-      minDuration: 120,
-      maxDuration: 420,
-      pricePerHour: 25000
-    },
-    {
-      id: "PROF-013",
-      name: "Alejandra Campos",
-      service: "Jardinería",
-      rating: 4.9,
-      reviews: 185,
-      region: "Región de Valparaíso",
-      commune: "Quilpué",
-      location: "Quilpué, V",
-      basePrice: 26000,
-      priceDisplay: "Desde $26.000",
-      experience: "6 años",
-      phone: "+56 9 9999 2222",
-      email: "alejandra.campos@email.com",
-      description: "Especialista en jardinería ecológica, huertos urbanos y diseño de espacios verdes sustentables.",
-      verified: true,
-      avatar: "/api/placeholder/150/150",
-      gender: "femenino",
-      age: 34,
-      durationType: "range" as const,
-      minDuration: 180,
-      maxDuration: 360,
-      pricePerHour: 24000
-    }
-  ]
+  // La pestaña de búsqueda ahora consume el endpoint público /api/services/search/ directamente
 
   const handleMarkAsCompleted = (requestId: string) => {
     setServiceRequests(prev => 
@@ -526,12 +266,53 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
     setUserProfessionalProfile(profile)
   }
 
-  const handleBecomeProfessional = (profileData: any) => {
-    console.log("Creando perfil profesional:", profileData)
-    // Aquí se enviaría la aplicación al backend
-    // Por ahora simulamos que el usuario se convierte en profesional
-    user.isProfessional = true
-    setUserProfessionalProfile(profileData)
+  const handleBecomeProfessional = async (profileData: any) => {
+    // Enviar solicitud real al backend para crear perfil y primer servicio en estado pendiente
+    try {
+      const firstService = profileData.services?.[0]
+      if (!firstService) throw new Error('Falta el primer servicio')
+      // Si vienen archivos adjuntos en profileData, enviar como multipart/form-data
+      if (profileData.__files) {
+        const fd = new FormData()
+        fd.append('general_description', profileData.generalDescription || '')
+        fd.append('category_slug', (firstService.categoryId || '').toString())
+        fd.append('experience', firstService.experience || '')
+        fd.append('description', firstService.description || '')
+        fd.append('duration_type', firstService.durationType || 'fixed')
+        if (firstService.fixedDuration != null) fd.append('fixed_duration', String(firstService.fixedDuration))
+        if (firstService.minDuration != null) fd.append('min_duration', String(firstService.minDuration))
+        if (firstService.maxDuration != null) fd.append('max_duration', String(firstService.maxDuration))
+        fd.append('price_fixed', String(firstService.priceFixed))
+        if (profileData.__files.certificate) {
+          fd.append('certificate', profileData.__files.certificate)
+        }
+        if (Array.isArray(profileData.__files.experience)) {
+          for (const f of profileData.__files.experience) {
+            fd.append('experience_docs', f)
+          }
+        }
+        await apiPostForm('/api/professional/apply/', fd, { auth: true })
+      } else {
+        await apiPost('/api/professional/apply/', {
+          general_description: profileData.generalDescription,
+          category_slug: (firstService.categoryId || '').toString(),
+          experience: firstService.experience,
+          description: firstService.description,
+          duration_type: firstService.durationType,
+          fixed_duration: firstService.fixedDuration,
+          min_duration: firstService.minDuration,
+          max_duration: firstService.maxDuration,
+          price_fixed: firstService.priceFixed,
+        }, { auth: true })
+      }
+      // No habilitar panel ni marcar como profesional hasta que verificador apruebe
+      setProfessionalStatus('pending')
+      setUserProfessionalProfile(null)
+      if (activeTab !== 'professional') setActiveTab('professional')
+      alert('Tu solicitud fue enviada al verificador. Te notificaremos al ser revisada.')
+    } catch (e: any) {
+      alert('No se pudo enviar la solicitud: ' + (e?.message || 'Error desconocido'))
+    }
   }
 
   return (
@@ -597,7 +378,6 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
           {/* Search Services Tab */}
           <TabsContent value="search">
             <SearchTab 
-              professionals={professionals}
               user={user}
             />
           </TabsContent>
@@ -622,6 +402,17 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
 
           {/* Professional Tab */}
           <TabsContent value="professional">
+            {/* Estado de solicitud: pendiente o rechazada */}
+            {professionalStatus === 'pending' && (
+              <div className="mb-4 p-3 border border-yellow-200 bg-yellow-50 rounded-md text-sm text-yellow-800">
+                Tu solicitud para crear el perfil profesional está en revisión. Te avisaremos cuando sea aprobada.
+              </div>
+            )}
+            {professionalStatus === 'rejected' && (
+              <div className="mb-4 p-3 border border-red-200 bg-red-50 rounded-md text-sm text-red-700">
+                Tu última solicitud fue rechazada. Motivo: {rejectionReason}
+              </div>
+            )}
             <ProfessionalTabMultiService 
               user={user}
               userProfessionalProfile={userProfessionalProfile}

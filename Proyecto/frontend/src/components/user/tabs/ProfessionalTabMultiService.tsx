@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import { API_URL, apiPostForm, apiPutAuth } from "../../../lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../ui/card"
 import { Button } from "../../ui/button"
 import { Input } from "../../ui/input"
@@ -78,13 +79,18 @@ export default function ProfessionalTabMultiService({
   const [showAddServiceForm, setShowAddServiceForm] = useState(false)
   const [editingProfile, setEditingProfile] = useState(false)
   const [editServiceForm, setEditServiceForm] = useState<any>({})
+  const newExpInputRef = useRef<HTMLInputElement | null>(null)
 
   // Categorías de servicios disponibles
-  const serviceCategories = [
-    { id: "gasfiteria", name: "Gasfitería" },
-    { id: "limpieza", name: "Limpieza del Hogar" },
-    { id: "jardineria", name: "Jardinería" }
-  ]
+  const [serviceCategories, setServiceCategories] = useState<{ id: string; name: string; slug: string }[]>([])
+
+  useEffect(() => {
+    // Cargar categorías desde API
+    fetch(`${API_URL}/api/categories/`)
+      .then(r => r.json())
+      .then((rows) => setServiceCategories(rows.map((x: any) => ({ id: x.id, name: x.nombre, slug: x.slug }))))
+      .catch(() => setServiceCategories([]))
+  }, [])
 
   // Estado para formulario de nuevo servicio
   const [newServiceForm, setNewServiceForm] = useState({
@@ -97,6 +103,7 @@ export default function ProfessionalTabMultiService({
     maxDuration: 240,
     priceFixed: 25000
   })
+  const [newServiceExperienceFiles, setNewServiceExperienceFiles] = useState<File[]>([])
 
   // Estado para editar perfil general
   const [profileForm, setProfileForm] = useState({
@@ -117,6 +124,12 @@ export default function ProfessionalTabMultiService({
     firstServicePrice: 25000
   })
 
+  // Uploads estado inicial (UI-only por ahora)
+  const [certificateFile, setCertificateFile] = useState<File | null>(null)
+  const [experienceFiles, setExperienceFiles] = useState<File[]>([])
+  const certInputRef = useRef<HTMLInputElement | null>(null)
+  const expInputRef = useRef<HTMLInputElement | null>(null)
+
   // Función para convertir minutos a formato de horas
   const formatDuration = (minutes: number) => {
     const hours = Math.floor(minutes / 60)
@@ -132,60 +145,118 @@ export default function ProfessionalTabMultiService({
   // Función para convertir formato de horas a minutos
   // Nota: función de parseo no utilizada eliminada para evitar advertencias de TypeScript
 
-  const handleAddService = () => {
+  const handleAddService = async () => {
     if (!userProfessionalProfile) return
-
-    const newService: ProfessionalService = {
-      id: `service-${Date.now()}`,
-      categoryId: newServiceForm.categoryId,
-      categoryName: serviceCategories.find(c => c.id === newServiceForm.categoryId)?.name || "",
-      experience: newServiceForm.experience,
-      description: newServiceForm.description,
-      durationType: newServiceForm.durationType,
-      fixedDuration: newServiceForm.durationType === 'fixed' ? newServiceForm.fixedDuration : undefined,
-      minDuration: newServiceForm.durationType === 'range' ? newServiceForm.minDuration : undefined,
-      maxDuration: newServiceForm.durationType === 'range' ? newServiceForm.maxDuration : undefined,
-      priceFixed: newServiceForm.priceFixed,
-      isActive: true,
-      isAvailable: true,
-      verificationStatus: 'pending',
-      rating: 0,
-      completedJobs: 0,
-      totalEarnings: 0
+    if (!newServiceForm.categoryId || !newServiceForm.description) {
+      alert('Completa categoría y descripción')
+      return
+    }
+    if (newServiceExperienceFiles.length === 0) {
+      alert('Debes adjuntar al menos un documento de experiencia')
+      return
     }
 
-    const updatedProfile = {
-      ...userProfessionalProfile,
-      services: [...userProfessionalProfile.services, newService]
-    }
+    // Enviar al backend para crear servicio adicional en estado pendiente
+    try {
+      const fd = new FormData()
+      fd.append('general_description', userProfessionalProfile.generalDescription || newServiceForm.description || 'Solicitud de servicio adicional')
+      fd.append('category_slug', newServiceForm.categoryId)
+      fd.append('experience', newServiceForm.experience)
+      fd.append('description', newServiceForm.description)
+      fd.append('duration_type', newServiceForm.durationType)
+      if (newServiceForm.durationType === 'fixed') {
+        fd.append('fixed_duration', String(newServiceForm.fixedDuration))
+      } else {
+        fd.append('min_duration', String(newServiceForm.minDuration))
+        fd.append('max_duration', String(newServiceForm.maxDuration))
+      }
+      fd.append('price_fixed', String(newServiceForm.priceFixed))
+      for (const f of newServiceExperienceFiles) {
+        fd.append('experience_docs', f)
+      }
 
-    onUpdateProfessionalProfile(updatedProfile)
-    setShowAddServiceForm(false)
-    setNewServiceForm({
-      categoryId: "",
-      experience: "",
-      description: "",
-      durationType: "fixed",
-      fixedDuration: 60,
-      minDuration: 60,
-      maxDuration: 240,
-      priceFixed: 25000
-    })
+      await apiPostForm('/api/professional/apply/', fd, { auth: true })
+
+      // Reflejar inmediatamente en UI como pendiente
+      const newService: ProfessionalService = {
+        id: `service-${Date.now()}`,
+        categoryId: newServiceForm.categoryId,
+        categoryName: serviceCategories.find(c => c.slug === newServiceForm.categoryId || c.id === newServiceForm.categoryId)?.name || "",
+        experience: newServiceForm.experience,
+        description: newServiceForm.description,
+        durationType: newServiceForm.durationType,
+        fixedDuration: newServiceForm.durationType === 'fixed' ? newServiceForm.fixedDuration : undefined,
+        minDuration: newServiceForm.durationType === 'range' ? newServiceForm.minDuration : undefined,
+        maxDuration: newServiceForm.durationType === 'range' ? newServiceForm.maxDuration : undefined,
+        priceFixed: newServiceForm.priceFixed,
+        isActive: true,
+        isAvailable: true,
+        verificationStatus: 'pending',
+        rating: 0,
+        completedJobs: 0,
+        totalEarnings: 0
+      }
+
+      const updatedProfile = {
+        ...userProfessionalProfile,
+        services: [...userProfessionalProfile.services, newService]
+      }
+      onUpdateProfessionalProfile(updatedProfile)
+
+      // Reset de formulario
+      setShowAddServiceForm(false)
+      setNewServiceForm({
+        categoryId: "",
+        experience: "",
+        description: "",
+        durationType: "fixed",
+        fixedDuration: 60,
+        minDuration: 60,
+        maxDuration: 240,
+        priceFixed: 25000
+      })
+      setNewServiceExperienceFiles([])
+      alert('Solicitud enviada al verificador. Te avisaremos cuando se revise.')
+    } catch (e: any) {
+      alert('No se pudo enviar la solicitud: ' + (e?.message || 'Error desconocido'))
+    }
   }
 
-  const handleToggleServiceActive = (serviceId: string) => {
+  const handleToggleServiceActive = async (serviceId: string) => {
     if (!userProfessionalProfile) return
-
-    const updatedProfile = {
-      ...userProfessionalProfile,
-      services: userProfessionalProfile.services.map(service =>
-        service.id === serviceId 
-          ? { ...service, isActive: !service.isActive }
-          : service
-      )
+    // Validar que el ID sea un UUID (ruta backend exige <uuid:service_id>)
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/
+    if (!uuidRegex.test(serviceId)) {
+      alert('Este servicio aún no tiene un ID válido (posible servicio simulado o no aprobado).')
+      return
     }
-
-    onUpdateProfessionalProfile(updatedProfile)
+    const target = userProfessionalProfile.services.find(s => s.id === serviceId)
+    const next = !(target?.isActive)
+    const approved = target?.verificationStatus === 'approved'
+    // Si no está aprobado, no impacta el buscador igual; sólo UX local
+    if (!approved) {
+      onUpdateProfessionalProfile({
+        ...userProfessionalProfile,
+        services: userProfessionalProfile.services.map(s => s.id === serviceId ? { ...s, isActive: next } : s)
+      })
+      return
+    }
+    // Optimistic UI
+    onUpdateProfessionalProfile({
+      ...userProfessionalProfile,
+      services: userProfessionalProfile.services.map(s => s.id === serviceId ? { ...s, isActive: next } : s)
+    })
+    try {
+      await apiPutAuth(`/api/services/${serviceId}/visibility/`, { is_active: next })
+    } catch (e: any) {
+      // rollback on error
+      onUpdateProfessionalProfile({
+        ...userProfessionalProfile,
+        services: userProfessionalProfile.services.map(s => s.id === serviceId ? { ...s, isActive: !next } : s)
+      })
+      const msg = typeof e?.message === 'string' ? e.message : ''
+      alert('No se pudo actualizar la visibilidad del servicio' + (msg ? `: ${msg}` : ''))
+    }
   }
 
   // Nota: Si se necesita eliminar servicios en el futuro, agregar lógica aquí
@@ -206,7 +277,7 @@ export default function ProfessionalTabMultiService({
       services: [{
         id: `service-${Date.now()}`,
         categoryId: initialProfessionalForm.firstServiceCategory,
-        categoryName: serviceCategories.find(c => c.id === initialProfessionalForm.firstServiceCategory)?.name || "",
+  categoryName: serviceCategories.find(c => c.slug === initialProfessionalForm.firstServiceCategory || c.id === initialProfessionalForm.firstServiceCategory)?.name || "",
         experience: initialProfessionalForm.firstServiceExperience,
         description: initialProfessionalForm.firstServiceDescription,
         durationType: initialProfessionalForm.firstServiceDurationType,
@@ -223,7 +294,16 @@ export default function ProfessionalTabMultiService({
       }]
     }
 
-    onBecomeProfessional(initialProfile)
+    // Adjuntar archivos al payload para envío multipart en el contenedor
+    const payload: any = {
+      ...initialProfile,
+      __files: {
+        certificate: certificateFile,
+        experience: experienceFiles,
+      }
+    }
+
+    onBecomeProfessional(payload)
     setShowProfessionalForm(false)
   }
 
@@ -286,9 +366,8 @@ export default function ProfessionalTabMultiService({
 
   const getAvailableCategories = () => {
     if (!userProfessionalProfile) return serviceCategories
-
     const usedCategoryIds = userProfessionalProfile.services.map(s => s.categoryId)
-    return serviceCategories.filter(cat => !usedCategoryIds.includes(cat.id))
+    return serviceCategories.filter(cat => !usedCategoryIds.includes(cat.slug) && !usedCategoryIds.includes(cat.id))
   }
 
   const getVerificationStatusBadge = (status: string) => {
@@ -308,7 +387,7 @@ export default function ProfessionalTabMultiService({
     )
   }
 
-  // Si no es profesional, mostrar formulario para convertirse en uno
+  // Si no es profesional (aún no aprobado), mostrar formulario para enviar solicitud inicial
   if (!userProfessionalProfile && !showProfessionalForm) {
     return (
       <div className="space-y-6">
@@ -406,14 +485,14 @@ export default function ProfessionalTabMultiService({
                     }))}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Selecciona una categoría" />
+                      <SelectValue placeholder={serviceCategories.length ? "Selecciona una categoría" : "No hay categorías disponibles"} />
                     </SelectTrigger>
                     <SelectContent>
-                      {serviceCategories.map(category => (
-                        <SelectItem key={category.id} value={category.id}>
-                          {category.name}
-                        </SelectItem>
-                      ))}
+                        {serviceCategories.map(category => (
+                          <SelectItem key={category.slug} value={category.slug}>
+                            {category.name}
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -552,7 +631,7 @@ export default function ProfessionalTabMultiService({
                     <p className="font-medium">Para tu primera solicitud debes presentar:</p>
                     <ul className="list-disc list-inside space-y-1 text-sm">
                       <li>Certificado de Antecedentes (obligatorio, solo se solicita una vez)</li>
-                      <li>Documentación que respalde tu experiencia en {initialProfessionalForm.firstServiceCategory ? serviceCategories.find(c => c.id === initialProfessionalForm.firstServiceCategory)?.name : 'el servicio seleccionado'}</li>
+                      <li>Documentación que respalde tu experiencia en {initialProfessionalForm.firstServiceCategory ? serviceCategories.find(c => c.slug === initialProfessionalForm.firstServiceCategory || c.id === initialProfessionalForm.firstServiceCategory)?.name : 'el servicio seleccionado'}</li>
                     </ul>
                     <p className="text-xs text-gray-600 mt-2">
                       El certificado de antecedentes puedes solicitarlo en chileatiende.gob.cl
@@ -564,7 +643,10 @@ export default function ProfessionalTabMultiService({
               <div className="space-y-3">
                 <div>
                   <Label>Certificado de Antecedentes (Obligatorio) *</Label>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center mt-2">
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center mt-2 cursor-pointer hover:bg-gray-50"
+                    onClick={() => certInputRef.current?.click()}
+                  >
                     <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm text-gray-600">
                       Arrastra tu certificado aquí o haz clic para seleccionar
@@ -572,6 +654,26 @@ export default function ProfessionalTabMultiService({
                     <p className="text-xs text-gray-500 mt-1">
                       PDF, JPG, PNG (máx. 5MB)
                     </p>
+                    {certificateFile && (
+                      <p className="text-sm text-green-700 mt-2">
+                        Seleccionado: {certificateFile.name}
+                      </p>
+                    )}
+                    <input
+                      ref={certInputRef}
+                      type="file"
+                      accept="application/pdf,image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null
+                        if (f && f.size > 5 * 1024 * 1024) {
+                          alert('Archivo supera 5MB')
+                          e.currentTarget.value = ''
+                          return
+                        }
+                        setCertificateFile(f)
+                      }}
+                    />
                   </div>
                 </div>
 
@@ -580,7 +682,10 @@ export default function ProfessionalTabMultiService({
                   <p className="text-xs text-gray-500 mb-2">
                     Sube certificados, cartas de recomendación, facturas, boletas u otros documentos que respalden tu experiencia
                   </p>
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                  <div
+                    className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:bg-gray-50"
+                    onClick={() => expInputRef.current?.click()}
+                  >
                     <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm text-gray-600">
                       Arrastra archivos aquí o haz clic para seleccionar
@@ -588,6 +693,31 @@ export default function ProfessionalTabMultiService({
                     <p className="text-xs text-gray-500 mt-1">
                       PDF, JPG, PNG (máx. 5MB cada uno) - Puedes subir varios archivos
                     </p>
+                    {experienceFiles.length > 0 && (
+                      <div className="mt-2 text-left">
+                        <p className="text-xs font-medium text-gray-600 mb-1">Archivos seleccionados:</p>
+                        <ul className="text-xs list-disc list-inside space-y-1 max-h-24 overflow-auto">
+                          {experienceFiles.map((f, idx) => (
+                            <li key={idx}>{f.name}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    <input
+                      ref={expInputRef}
+                      type="file"
+                      accept="application/pdf,image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(e) => {
+                        const fl = Array.from(e.target.files || [])
+                        const valid = fl.filter(f => f.size <= 5 * 1024 * 1024)
+                        if (valid.length !== fl.length) {
+                          alert('Se ignoraron archivos > 5MB')
+                        }
+                        setExperienceFiles(valid)
+                      }}
+                    />
                   </div>
                 </div>
               </div>
@@ -597,7 +727,12 @@ export default function ProfessionalTabMultiService({
               <Button 
                 onClick={handleBecomeProfessional} 
                 className="flex-1"
-                disabled={!initialProfessionalForm.firstServiceCategory || !initialProfessionalForm.generalDescription}
+                disabled={
+                  !initialProfessionalForm.firstServiceCategory ||
+                  !initialProfessionalForm.generalDescription ||
+                  !certificateFile ||
+                  experienceFiles.length === 0
+                }
               >
                 <Save className="w-4 h-4 mr-2" />
                 Crear Perfil Profesional
@@ -818,7 +953,7 @@ export default function ProfessionalTabMultiService({
                       </SelectTrigger>
                       <SelectContent>
                         {getAvailableCategories().map(category => (
-                          <SelectItem key={category.id} value={category.id}>
+                          <SelectItem key={category.slug} value={category.slug}>
                             {category.name}
                           </SelectItem>
                         ))}
@@ -957,7 +1092,7 @@ export default function ProfessionalTabMultiService({
                     <AlertDescription>
                       <div className="space-y-2">
                         <p className="text-sm">
-                          Para agregar este nuevo servicio, debes presentar documentación que respalde tu experiencia en {newServiceForm.categoryId ? serviceCategories.find(c => c.id === newServiceForm.categoryId)?.name : 'la categoría seleccionada'}.
+                          Para agregar este nuevo servicio, debes presentar documentación que respalde tu experiencia en {newServiceForm.categoryId ? serviceCategories.find(c => c.slug === newServiceForm.categoryId || c.id === newServiceForm.categoryId)?.name : 'la categoría seleccionada'}.
                         </p>
                         <p className="text-xs text-green-600 font-medium">
                           ✓ No necesitas volver a subir el certificado de antecedentes (ya verificado)
@@ -971,7 +1106,10 @@ export default function ProfessionalTabMultiService({
                     <p className="text-xs text-gray-500 mb-2">
                       Sube certificados, cartas de recomendación, facturas, boletas u otros documentos que respalden tu experiencia en esta área
                     </p>
-                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                    <div
+                      className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:bg-gray-50"
+                      onClick={() => newExpInputRef.current?.click()}
+                    >
                       <Upload className="w-6 h-6 text-gray-400 mx-auto mb-2" />
                       <p className="text-sm text-gray-600">
                         Arrastra archivos aquí o haz clic para seleccionar
@@ -979,6 +1117,31 @@ export default function ProfessionalTabMultiService({
                       <p className="text-xs text-gray-500 mt-1">
                         PDF, JPG, PNG (máx. 5MB cada uno) - Puedes subir varios archivos
                       </p>
+                      {newServiceExperienceFiles.length > 0 && (
+                        <div className="mt-2 text-left">
+                          <p className="text-xs font-medium text-gray-600 mb-1">Archivos seleccionados:</p>
+                          <ul className="text-xs list-disc list-inside space-y-1 max-h-24 overflow-auto">
+                            {newServiceExperienceFiles.map((f, idx) => (
+                              <li key={idx}>{f.name}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      <input
+                        ref={newExpInputRef}
+                        type="file"
+                        accept="application/pdf,image/*"
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                          const fl = Array.from(e.target.files || [])
+                          const valid = fl.filter(f => f.size <= 5 * 1024 * 1024)
+                          if (valid.length !== fl.length) {
+                            alert('Se ignoraron archivos > 5MB')
+                          }
+                          setNewServiceExperienceFiles(valid)
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
@@ -986,7 +1149,7 @@ export default function ProfessionalTabMultiService({
                 <div className="flex gap-3">
                   <Button 
                     onClick={handleAddService}
-                    disabled={!newServiceForm.categoryId || !newServiceForm.description}
+                    disabled={!newServiceForm.categoryId || !newServiceForm.description || newServiceExperienceFiles.length === 0}
                   >
                     <Save className="w-4 h-4 mr-2" />
                     Enviar para Verificación
