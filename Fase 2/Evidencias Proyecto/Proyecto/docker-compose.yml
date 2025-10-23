@@ -1,0 +1,87 @@
+services:
+  db:
+    image: postgres:16
+    container_name: servihogar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: servihogar
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: servihogar-pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@servihogar.cl
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: servihogar-web
+    restart: unless-stopped
+    environment:
+      # Django
+      DEBUG: "1"
+      SECRET_KEY: dev-secret-key-change-me
+      ALLOWED_HOSTS: "*"
+      # Database via django-environ
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/servihogar
+      # Direct DB params for entrypoint (optional; defaults match these)
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_NAME: servihogar
+      DB_PASSWORD: postgres
+      # CORS for Vite dev
+      CORS_ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/ping/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: servihogar-frontend
+    restart: unless-stopped
+    working_dir: /app
+    environment:
+      VITE_API_URL: http://127.0.0.1:8000
+      # Needed when using WSL2/Docker Desktop to get proper polling
+      CHOKIDAR_USEPOLLING: "true"
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - node_modules:/app/node_modules
+    # Run dev server; dependencies are installed at build and persisted via volume
+    command: ["npm", "run", "dev", "--", "--host"]
+    depends_on:
+      web:
+        condition: service_healthy
+volumes:
+  pgdata:
+  node_modules:
