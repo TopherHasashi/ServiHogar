@@ -34,46 +34,13 @@ interface Criteria {
 }
 
 export default function ReviewModal({ isOpen, onClose, onSubmit, serviceRequest }: ReviewModalProps) {
-  // Criterios de evaluación según el tipo de servicio
-  const getCriteriaByService = (service: string): Criteria[] => {
-    switch (service.toLowerCase()) {
-      case "gasfitería":
-        return [
-          { id: "quality", name: "Calidad del Trabajo", description: "Instalación y reparación correcta" },
-          { id: "cleanliness", name: "Orden y Limpieza", description: "Dejó el área de trabajo limpia" },
-          { id: "punctuality", name: "Puntualidad", description: "Llegó a la hora acordada" },
-          { id: "professionalism", name: "Profesionalismo", description: "Trato cordial y profesional" },
-          { id: "efficiency", name: "Eficiencia", description: "Completó el trabajo en tiempo adecuado" }
-        ]
-      case "limpieza del hogar":
-        return [
-          { id: "thoroughness", name: "Minuciosidad", description: "Limpieza profunda y detallada" },
-          { id: "organization", name: "Organización", description: "Ordenó y organizó espacios" },
-          { id: "punctuality", name: "Puntualidad", description: "Llegó a la hora acordada" },
-          { id: "professionalism", name: "Profesionalismo", description: "Trato cordial y profesional" },
-          { id: "materials", name: "Uso de Materiales", description: "Uso adecuado de productos de limpieza" },
-          { id: "respect", name: "Respeto", description: "Cuidó pertenencias y privacidad" }
-        ]
-      case "jardinería":
-        return [
-          { id: "design", name: "Diseño y Estética", description: "Resultado visual atractivo" },
-          { id: "technique", name: "Técnica", description: "Podas y cuidados correctos" },
-          { id: "cleanliness", name: "Orden y Limpieza", description: "Recogió desechos y dejó limpio" },
-          { id: "punctuality", name: "Puntualidad", description: "Llegó a la hora acordada" },
-          { id: "professionalism", name: "Profesionalismo", description: "Trato cordial y profesional" },
-          { id: "advice", name: "Asesoramiento", description: "Brindó consejos útiles de mantención" }
-        ]
-      default:
-        return [
-          { id: "quality", name: "Calidad del Trabajo", description: "Resultado del servicio" },
-          { id: "punctuality", name: "Puntualidad", description: "Llegó a la hora acordada" },
-          { id: "professionalism", name: "Profesionalismo", description: "Trato cordial y profesional" },
-          { id: "cleanliness", name: "Orden y Limpieza", description: "Dejó el área de trabajo limpia" }
-        ]
-    }
-  }
-
-  const criteria = getCriteriaByService(serviceRequest.service)
+  // Criterios fijos alineados a la tabla `resena` del backend
+  // Columnas: calificacion_calidad, calificacion_puntualidad, calificacion_comunicacion
+  const criteria: Criteria[] = [
+    { id: "calificacion_calidad", name: "Calidad", description: "Calidad del trabajo realizado" },
+    { id: "calificacion_puntualidad", name: "Puntualidad", description: "Llegó a la hora acordada" },
+    { id: "calificacion_comunicacion", name: "Comunicación", description: "Claridad y trato durante el servicio" },
+  ]
   
   // Estado para las calificaciones por criterio (1-5 estrellas)
   const [ratings, setRatings] = useState<{ [key: string]: number }>({})
@@ -92,7 +59,7 @@ export default function ReviewModal({ isOpen, onClose, onSubmit, serviceRequest 
 
   // Calcular promedio de calificaciones
   const calculateAverageRating = () => {
-    const validRatings = Object.values(ratings).filter(rating => rating > 0)
+    const validRatings = Object.values(ratings).filter((rating) => rating > 0)
     if (validRatings.length === 0) return 0
     const sum = validRatings.reduce((acc, rating) => acc + rating, 0)
     return Math.round((sum / validRatings.length) * 10) / 10 // Redondear a 1 decimal
@@ -138,10 +105,15 @@ export default function ReviewModal({ isOpen, onClose, onSubmit, serviceRequest 
     
     const reviewData = {
       serviceRequestId: serviceRequest.id,
-      ratings,
       comment: comment.trim(),
       averageRating,
-      date: new Date().toISOString()
+      date: new Date().toISOString(),
+      // Mapeo directo a columnas de DB para facilitar el backend
+      calificacion_calidad: ratings["calificacion_calidad"] || 0,
+      calificacion_puntualidad: ratings["calificacion_puntualidad"] || 0,
+      calificacion_comunicacion: ratings["calificacion_comunicacion"] || 0,
+      // También enviamos el objeto por compatibilidad con otras vistas
+      ratings,
     }
     
     onSubmit(reviewData)
