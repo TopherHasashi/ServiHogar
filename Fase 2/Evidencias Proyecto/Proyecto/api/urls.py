@@ -18,6 +18,12 @@ from .views import (
     schedule_detail,
     services_search,
     toggle_service_visibility,
+    service_availability,
+    service_book,
+    booking_confirm,
+    booking_cancel,
+    service_weekly_template,
+    my_requests,
 )
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
@@ -46,5 +52,11 @@ urlpatterns = [
     # Scheduling
     path("schedule/<uuid:service_id>/", schedule_detail, name="schedule_detail"),
     path("services/search/", services_search, name="services_search"),
+    path("services/<uuid:service_id>/availability/", service_availability, name="service_availability"),
+    path("services/<uuid:service_id>/weekly-template/", service_weekly_template, name="service_weekly_template"),
+    path("services/<uuid:service_id>/book/", service_book, name="service_book"),
+    path("requests/<uuid:request_id>/confirm/", booking_confirm, name="booking_confirm"),
+    path("requests/<uuid:request_id>/cancel/", booking_cancel, name="booking_cancel"),
+    path("my/requests/", my_requests, name="my_requests"),
     path("services/<uuid:service_id>/visibility/", toggle_service_visibility, name="toggle_service_visibility"),
 ]

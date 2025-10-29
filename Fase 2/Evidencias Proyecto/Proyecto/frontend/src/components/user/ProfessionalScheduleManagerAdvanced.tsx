@@ -115,6 +115,9 @@ export default function ProfessionalScheduleManagerAdvanced({
     endDate: '',
     weeklySchedule: {} as WeeklySchedule
   })
+  
+  // Fecha de hoy en ISO (YYYY-MM-DD) para validar inputs de fecha
+  const todayISO = useMemo(() => new Date().toISOString().split('T')[0], [])
 
   // Estado para programaciones por servicio
   const [serviceSchedules, setServiceSchedules] = useState<Record<string, ServiceSchedule>>(() => {
@@ -224,6 +227,18 @@ export default function ProfessionalScheduleManagerAdvanced({
 
   // Servicios habilitados
   const enabledServices = professionalServices.filter(service => service.isActive && service.isAvailable)
+
+  // Auto-seleccionar servicio por defecto cuando haya uno válido o cuando el seleccionado ya no esté disponible
+  useEffect(() => {
+    if (!enabledServices || enabledServices.length === 0) {
+      if (selectedService) setSelectedService("")
+      return
+    }
+    const exists = enabledServices.some(s => s.id === selectedService)
+    if (!selectedService || !exists) {
+      setSelectedService(enabledServices[0].id)
+    }
+  }, [enabledServices.map(s => s.id).join('|')])
 
   // Funciones para navegación de meses
   const goToPreviousMonth = () => {
@@ -587,6 +602,9 @@ export default function ProfessionalScheduleManagerAdvanced({
 
   const handleSavePeriod = () => {
     if (!selectedService || !periodForm.name || !periodForm.startDate || !periodForm.endDate) return
+    // Validaciones: inicio >= hoy, fin >= inicio
+    if (periodForm.startDate < todayISO) return
+    if (periodForm.endDate < periodForm.startDate) return
 
     const newPeriod: CustomSchedulePeriod = {
       id: editingPeriod || Date.now().toString(),
@@ -1157,17 +1175,38 @@ export default function ProfessionalScheduleManagerAdvanced({
                           <Label>Fecha inicio</Label>
                           <Input
                             type="date"
+                            min={todayISO}
                             value={periodForm.startDate}
-                            onChange={(e) => setPeriodForm(prev => ({ ...prev, startDate: e.target.value }))}
+                            onChange={(e) => {
+                              const nextStart = e.target.value
+                              setPeriodForm(prev => ({
+                                ...prev,
+                                startDate: nextStart,
+                                endDate: prev.endDate && prev.endDate < nextStart ? nextStart : prev.endDate
+                              }))
+                            }}
                           />
+                          {periodForm.startDate && periodForm.startDate < todayISO && (
+                            <p className="text-xs text-red-600 mt-1">La fecha de inicio no puede ser anterior a hoy.</p>
+                          )}
                         </div>
                         <div>
                           <Label>Fecha fin</Label>
                           <Input
                             type="date"
+                            min={periodForm.startDate || todayISO}
                             value={periodForm.endDate}
-                            onChange={(e) => setPeriodForm(prev => ({ ...prev, endDate: e.target.value }))}
+                            onChange={(e) => {
+                              const nextEnd = e.target.value
+                              setPeriodForm(prev => ({
+                                ...prev,
+                                endDate: (prev.startDate && nextEnd < prev.startDate) ? prev.startDate : nextEnd
+                              }))
+                            }}
                           />
+                          {periodForm.endDate && periodForm.startDate && periodForm.endDate < periodForm.startDate && (
+                            <p className="text-xs text-red-600 mt-1">La fecha de término debe ser posterior o igual a la fecha de inicio.</p>
+                          )}
                         </div>
                       </div>
 
@@ -1270,7 +1309,7 @@ export default function ProfessionalScheduleManagerAdvanced({
                         </Button>
                         <Button 
                           onClick={handleSavePeriod}
-                          disabled={!periodForm.name || !periodForm.startDate || !periodForm.endDate}
+                          disabled={!periodForm.name || !periodForm.startDate || !periodForm.endDate || (periodForm.startDate < todayISO) || (periodForm.endDate < periodForm.startDate)}
                         >
                           {editingPeriod ? 'Guardar Cambios' : 'Crear Período'}
                         </Button>

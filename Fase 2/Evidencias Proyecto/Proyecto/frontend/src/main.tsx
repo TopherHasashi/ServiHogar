@@ -19,6 +19,7 @@ import VerificadorPage from './pages/Verificador.tsx'
 import ClientePage from './pages/Cliente'
 import AdminPage from './pages/Admin'
 import { AuthProvider } from './lib/auth'
+import { Toaster } from 'sonner'
 
 function Layout() {
   const navigate = useNavigate()
@@ -67,6 +68,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AuthProvider>
       <RouterProvider router={router} />
+      <Toaster richColors closeButton position="top-center" />
     </AuthProvider>
   </StrictMode>,
 )

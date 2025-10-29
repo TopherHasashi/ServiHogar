@@ -4,6 +4,17 @@ import { Button } from "../../ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/tabs"
 import { Badge } from "../../ui/badge"
 import { Alert, AlertDescription } from "../../ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription as AlertDialogDesc,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../../ui/alert-dialog"
 import ReviewModal from "../ReviewModal"
 import { 
   Calendar,
@@ -20,13 +31,19 @@ interface RequestsTabProps {
   professionalBookings: any[]
   onMarkAsCompleted: (requestId: string) => void
   onSubmitReview: (reviewData: any) => void
+  onConfirmBooking?: (id: string) => void
+  onCancelBooking?: (id: string) => void
+  onCancelClient?: (id: string) => void
 }
 
 export default function RequestsTab({ 
   serviceRequests, 
   professionalBookings, 
   onMarkAsCompleted,
-  onSubmitReview 
+  onSubmitReview,
+  onConfirmBooking,
+  onCancelBooking,
+  onCancelClient,
 }: RequestsTabProps) {
   const [requestsTab, setRequestsTab] = useState("client")
   const [showReviewModal, setShowReviewModal] = useState(false)
@@ -115,6 +132,12 @@ export default function RequestsTab({
                             <Clock className="w-4 h-4 text-gray-500" />
                             <span className="text-sm">{request.time}</span>
                           </div>
+                          {(request.comuna || request.region) && (
+                            <div className="flex items-center gap-2 col-span-2">
+                              <MapPin className="w-4 h-4 text-gray-500" />
+                              <span className="text-sm">{request.comuna}{request.region ? `, ${request.region}` : ''}</span>
+                            </div>
+                          )}
                         </div>
                         
                         <div className="flex justify-between items-center">
@@ -123,6 +146,36 @@ export default function RequestsTab({
                           </span>
                           
                           <div className="flex gap-2">
+                            {(request.status === "Pendiente" || request.status === "Confirmado") && (
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="destructive" size="sm">Cancelar</Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>¿Cancelar esta solicitud?</AlertDialogTitle>
+                                    <AlertDialogDesc>
+                                      Esta acción liberará el cupo y no podrás revertirla.
+                                    </AlertDialogDesc>
+                                    <div className="mt-3 space-y-1 text-sm text-gray-600">
+                                      <div><span className="font-medium text-gray-800">Servicio:</span> {request.service}</div>
+                                      <div><span className="font-medium text-gray-800">Profesional:</span> {request.professional}</div>
+                                      <div><span className="font-medium text-gray-800">Fecha:</span> {request.date}</div>
+                                      <div><span className="font-medium text-gray-800">Hora:</span> {request.time}</div>
+                                      {(request.comuna || request.region) && (
+                                        <div><span className="font-medium text-gray-800">Ubicación:</span> {request.comuna}{request.region ? `, ${request.region}` : ''}</div>
+                                      )}
+                                    </div>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Volver</AlertDialogCancel>
+                                    <AlertDialogAction onClick={() => onCancelClient?.(request.id)} className="bg-red-600 hover:bg-red-700">
+                                      Sí, cancelar
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
+                            )}
                             {request.status === "Confirmado" && (
                               <Button
                                 onClick={() => onMarkAsCompleted(request.id)}
@@ -219,16 +272,95 @@ export default function RequestsTab({
                               <Phone className="w-4 h-4 text-gray-500" />
                               <span className="text-sm">{booking.phone}</span>
                             </div>
+                            {(booking.comuna || booking.region) && (
+                              <div className="flex items-center gap-2 col-span-2">
+                                <MapPin className="w-4 h-4 text-gray-500" />
+                                <span className="text-sm">{booking.comuna}{booking.region ? `, ${booking.region}` : ''}</span>
+                              </div>
+                            )}
                           </div>
                           
                           <div className="p-3 bg-gray-50 rounded-lg">
                             <p className="text-sm text-gray-700">{booking.description}</p>
                           </div>
                           
-                          <div className="flex justify-between items-center">
+                          <div className="flex justify-between items-center gap-3">
                             <span className="text-lg font-semibold">
                               ${booking.price.toLocaleString()}
                             </span>
+                            <div className="flex gap-2">
+                              {booking.status === "Pendiente" && (
+                                <>
+                                  <Button size="sm" onClick={() => onConfirmBooking?.(booking.id)} className="bg-green-600 hover:bg-green-700">
+                                    Aceptar
+                                  </Button>
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button size="sm" variant="destructive">Cancelar</Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>¿Cancelar esta solicitud?</AlertDialogTitle>
+                                        <AlertDialogDesc>
+                                          El cliente será notificado y el cupo quedará libre.
+                                        </AlertDialogDesc>
+                                        <div className="mt-3 space-y-1 text-sm text-gray-600">
+                                          <div><span className="font-medium text-gray-800">Servicio:</span> {booking.service}</div>
+                                          <div><span className="font-medium text-gray-800">Cliente:</span> {booking.client}</div>
+                                          <div><span className="font-medium text-gray-800">Fecha:</span> {booking.date}</div>
+                                          <div><span className="font-medium text-gray-800">Hora:</span> {booking.time}</div>
+                                          {booking.address && (
+                                            <div><span className="font-medium text-gray-800">Dirección:</span> {booking.address}</div>
+                                          )}
+                                          {(booking.comuna || booking.region) && (
+                                            <div><span className="font-medium text-gray-800">Ubicación:</span> {booking.comuna}{booking.region ? `, ${booking.region}` : ''}</div>
+                                          )}
+                                        </div>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>Volver</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => onCancelBooking?.(booking.id)} className="bg-red-600 hover:bg-red-700">
+                                          Sí, cancelar
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                </>
+                              )}
+                              {booking.status === "Confirmado" && (
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button size="sm" variant="destructive">Cancelar</Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>¿Cancelar esta solicitud?</AlertDialogTitle>
+                                      <AlertDialogDesc>
+                                        El cliente será notificado y el cupo quedará libre.
+                                      </AlertDialogDesc>
+                                      <div className="mt-3 space-y-1 text-sm text-gray-600">
+                                        <div><span className="font-medium text-gray-800">Servicio:</span> {booking.service}</div>
+                                        <div><span className="font-medium text-gray-800">Cliente:</span> {booking.client}</div>
+                                        <div><span className="font-medium text-gray-800">Fecha:</span> {booking.date}</div>
+                                        <div><span className="font-medium text-gray-800">Hora:</span> {booking.time}</div>
+                                        {booking.address && (
+                                          <div><span className="font-medium text-gray-800">Dirección:</span> {booking.address}</div>
+                                        )}
+                                        {(booking.comuna || booking.region) && (
+                                          <div><span className="font-medium text-gray-800">Ubicación:</span> {booking.comuna}{booking.region ? `, ${booking.region}` : ''}</div>
+                                        )}
+                                      </div>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Volver</AlertDialogCancel>
+                                      <AlertDialogAction onClick={() => onCancelBooking?.(booking.id)} className="bg-red-600 hover:bg-red-700">
+                                        Sí, cancelar
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </CardContent>

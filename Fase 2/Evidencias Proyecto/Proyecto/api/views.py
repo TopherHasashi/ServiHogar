@@ -23,7 +23,7 @@ from django.core.files.base import ContentFile
 from rest_framework.parsers import MultiPartParser, FormParser
 from typing import Tuple, List, Optional
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 
 def _normalize_genero(value: Optional[str]) -> Optional[str]:
@@ -161,6 +161,25 @@ def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[st
 	if not rut:
 		return False
 
+	# Defaults para columnas NOT NULL
+	if not genero:
+		genero = "no_binario"
+	# La tabla espera TIMESTAMP NOT NULL; si viene date, convertir a datetime; si nada, usar now()
+	if birth_date is None:
+		birth_dt = timezone.now()
+	else:
+		try:
+			# date -> datetime a medianoche
+			from datetime import date, datetime
+			if isinstance(birth_date, datetime):
+				birth_dt = birth_date
+			elif isinstance(birth_date, date):
+				birth_dt = datetime.combine(birth_date, datetime.min.time(), tzinfo=timezone.get_current_timezone())
+			else:
+				birth_dt = timezone.now()
+		except Exception:
+			birth_dt = timezone.now()
+
 	# Intentar UPSERT vía ORM sobre el modelo no gestionado
 	with transaction.atomic():
 		# Resolver comuna: usar override si viene, si no, resolver por nombres
@@ -193,16 +212,15 @@ def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[st
 					rut=rut,
 					nombres=nombres,
 					apellidos=apellidos,
-					hash_contrasena=password_hash,
 					telefono=telefono,
 					direccion=direccion,
 					genero=genero,
-					fecha_nacimiento=birth_date,
+					fecha_nacimiento=birth_dt,
 					id_comuna=id_comuna,
 					rol=rol,
 					email=email,
 					email_verificado=False,
-					perfil_publico=True,
+					ultima_actividad=None,
 					creado_en=timezone.now(),
 					actualizado_en=timezone.now(),
 				)
@@ -215,7 +233,7 @@ def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[st
 				obj.telefono = telefono or obj.telefono
 				obj.direccion = direccion or obj.direccion
 				obj.genero = genero or obj.genero
-				obj.fecha_nacimiento = birth_date or obj.fecha_nacimiento
+				obj.fecha_nacimiento = birth_dt or obj.fecha_nacimiento
 				obj.id_comuna = id_comuna or obj.id_comuna
 				obj.rol = rol or obj.rol
 				obj.actualizado_en = timezone.now()
@@ -226,6 +244,8 @@ def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[st
 				])
 			return True
 		except IntegrityError:
+			# Marcar rollback de la subtransacción para limpiar el estado y evitar InFailedSqlTransaction
+			transaction.set_rollback(True)
 			# Si conflicto por RUT, intenta buscar por RUT y actualizar por ahí
 			try:
 				obj = UsuarioDominio.objects.get(rut=rut)
@@ -235,7 +255,7 @@ def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[st
 				obj.telefono = telefono or obj.telefono
 				obj.direccion = direccion or obj.direccion
 				obj.genero = genero or obj.genero
-				obj.fecha_nacimiento = birth_date or obj.fecha_nacimiento
+				obj.fecha_nacimiento = birth_dt or obj.fecha_nacimiento
 				obj.id_comuna = id_comuna or obj.id_comuna
 				obj.rol = rol or obj.rol
 				obj.actualizado_en = timezone.now()
@@ -491,7 +511,8 @@ def me(request):
 			"id_comuna": dom.id_comuna,
 			"rol": dom.rol,
 			"email_verificado": dom.email_verificado,
-			"perfil_publico": dom.perfil_publico,
+			# Campos opcionales pueden no existir en el modelo unmanaged
+			"perfil_publico": getattr(dom, 'perfil_publico', None),
 			"foto_perfil_url": getattr(dom, 'foto_perfil_url', None),
 		}
 		# Calcular avatar efectivo (preferir dominio, luego profile)
@@ -1124,18 +1145,23 @@ def schedule_detail(request, service_id: str):
 			rows = cur.fetchall()
 		weekly_template = {name: {"enabled": False, "timeSlots": []} for name in day_names}
 		for d, h1, h2 in rows:
-			dn = weekday_name_from_index(int(d))
+			# DB ahora usa 0=Lun..6=Dom directamente
+			try:
+				py_idx = int(d)
+			except Exception:
+				py_idx = 0
+			dn = weekday_name_from_index(py_idx)
 			weekly_template[dn]["enabled"] = True
 			weekly_template[dn]["timeSlots"].append({"start": h1, "end": h2})
 
-		# Días bloqueados como unavailabilities (rango = mismo día)
+		# Días bloqueados como unavailabilities (rango de fechas)
 		with connection.cursor() as cur:
 			cur.execute(
 				"""
-				SELECT id_dia_bloqueado, fecha, COALESCE(motivo,'')
+				SELECT id_dia_bloqueado, fecha_inicio, fecha_fin, COALESCE(motivo,'')
 				FROM dia_bloqueado
 				WHERE id_servicio_profesional = %s
-				ORDER BY fecha
+				ORDER BY fecha_inicio
 				""",
 				[service_id],
 			)
@@ -1143,40 +1169,71 @@ def schedule_detail(request, service_id: str):
 		unav = [{
 			'id': str(r[0]),
 			'start_date': r[1].isoformat(),
-			'end_date': r[1].isoformat(),
-			'reason': r[2],
+			'end_date': r[2].isoformat(),
+			'reason': r[3],
 		} for r in urows]
 
 		# Períodos personalizados
+		# La tabla periodo_personalizado almacena filas por día (PUT expande por día).
+		# Para mostrar en la UI como "un período" con una plantilla semanal, agrupamos filas
+		# consecutivas por descripción, tolerando huecos de hasta 2 días (fines de semana).
 		with connection.cursor() as cur:
 			cur.execute(
 				"""
 				SELECT id_periodo_personalizado, fecha_inicio, fecha_fin,
-					   to_char(hora_inicio,'HH24:MI'), to_char(hora_fin,'HH24:MI'),
-					   COALESCE(descripcion,'')
+				       to_char(hora_inicio,'HH24:MI') AS hi, to_char(hora_fin,'HH24:MI') AS hf,
+				       COALESCE(descripcion,'') AS desc
 				FROM periodo_personalizado
 				WHERE id_servicio_profesional = %s
-				ORDER BY fecha_inicio, fecha_fin, hora_inicio
+				ORDER BY COALESCE(descripcion,''), fecha_inicio ASC, hora_inicio ASC
 				""",
 				[service_id],
 			)
 			prows = cur.fetchall()
-		periods = []
+
+		# Agrupar por descripción en un único período que abarque todo el rango
+		# Esto mostrará "1 solo conjunto" por nombre, con start/end globales
+		def _new_wt():
+			return {n: {"enabled": False, "timeSlots": [], "_seen": set()} for n in day_names}
+
+		groups: dict[str, dict] = {}
 		for pid, fi, ff, hi, hf, desc in prows:
-			# Construir weekly_template simple: aplicar el mismo slot a todos los días del rango
-			wt = {name: {"enabled": False, "timeSlots": []} for name in day_names}
-			current = fi
-			while current <= ff:
-				dn = weekday_name_from_index(current.weekday())
-				wt[dn]["enabled"] = True
-				wt[dn]["timeSlots"].append({"start": hi, "end": hf})
-				current = current + timedelta(days=1)
+			name = desc or ''
+			g = groups.get(name)
+			day_date = fi.date() if hasattr(fi, 'date') else fi
+			if not g:
+				g = groups[name] = {
+					'id': str(pid),
+					'name': name,
+					'start_date': day_date,
+					'end_date': day_date,
+					'weekly_template': _new_wt(),
+				}
+			# agregar slot
+			wday = weekday_name_from_index(fi.weekday())
+			cfg = g['weekly_template'][wday]
+			key = (hi, hf)
+			if key not in cfg['_seen']:
+				cfg['_seen'].add(key)
+				cfg['timeSlots'].append({'start': hi, 'end': hf})
+				cfg['enabled'] = True
+			# expandir rango
+			if day_date < g['start_date']:
+				g['start_date'] = day_date
+			if day_date > g['end_date']:
+				g['end_date'] = day_date
+
+		# materializar grupos sin metadatos internos
+		periods = []
+		for g in groups.values():
+			for dcfg in g['weekly_template'].values():
+				dcfg.pop('_seen', None)
 			periods.append({
-				'id': str(pid),
-				'name': desc,
-				'start_date': fi.isoformat(),
-				'end_date': ff.isoformat(),
-				'weekly_template': wt,
+				'id': g.get('id'),
+				'name': g['name'],
+				'start_date': datetime.combine(g['start_date'], datetime.min.time()).isoformat(),
+				'end_date': datetime.combine(g['end_date'], datetime.max.time()).isoformat(),
+				'weekly_template': g['weekly_template'],
 			})
 
 		return Response({
@@ -1236,33 +1293,30 @@ def schedule_detail(request, service_id: str):
 									id_horario_profesional, id_servicio_profesional, dia_semana, hora_inicio, hora_fin
 								) VALUES (%s,%s,%s,%s::time,%s::time)
 								""",
+								# Guardar índice tal cual: DB 0=Lun..6=Dom
 								[str(uuid.uuid4()), service_id, int(idx), st, en],
 							)
 
-		# Reemplazar días bloqueados
+		# Reemplazar días bloqueados (usar rangos fecha_inicio/fecha_fin)
 		with connection.cursor() as cur:
 			cur.execute("DELETE FROM dia_bloqueado WHERE id_servicio_profesional = %s", [service_id])
 			for item in unavailabilities:
 				try:
-					sd = datetime.fromisoformat((item or {}).get('start_date', '')).date()
-					ed = datetime.fromisoformat((item or {}).get('end_date', '')).date()
+					sd_dt = datetime.fromisoformat((item or {}).get('start_date', ''))
+					ed_dt = datetime.fromisoformat((item or {}).get('end_date', ''))
 				except Exception:
 					return Response({"message": "Fecha inválida en unavailabilities"}, status=status.HTTP_400_BAD_REQUEST)
-				if ed < sd:
+				if ed_dt < sd_dt:
 					return Response({"message": "Rango de fechas inválido en unavailability"}, status=status.HTTP_400_BAD_REQUEST)
-				cur_date = sd
 				reason = ((item or {}).get('reason') or '')[:255]
-				while cur_date <= ed:
-					cur.execute(
-						"""
-						INSERT INTO dia_bloqueado (
-							id_dia_bloqueado, id_servicio_profesional, fecha, motivo
-						) VALUES (%s,%s,%s,%s)
-						ON CONFLICT (id_servicio_profesional, fecha) DO UPDATE SET motivo=EXCLUDED.motivo
-						""",
-						[str(uuid.uuid4()), service_id, cur_date, reason],
-					)
-					cur_date = cur_date + timedelta(days=1)
+				cur.execute(
+					"""
+					INSERT INTO dia_bloqueado (
+						id_dia_bloqueado, id_servicio_profesional, fecha_inicio, fecha_fin, motivo
+					) VALUES (%s,%s,%s,%s,%s)
+					""",
+					[str(uuid.uuid4()), service_id, sd_dt, ed_dt, reason],
+				)
 
 		# Reemplazar períodos personalizados
 		with connection.cursor() as cur:
@@ -1275,6 +1329,10 @@ def schedule_detail(request, service_id: str):
 					return Response({"message": "Fecha inválida en custom_periods"}, status=status.HTTP_400_BAD_REQUEST)
 				if ed < sd:
 					return Response({"message": "Rango de fechas inválido en custom_periods"}, status=status.HTTP_400_BAD_REQUEST)
+				# Validación adicional: inicio no puede ser en el pasado respecto a hoy
+				today = timezone.now().date()
+				if sd < today:
+					return Response({"message": "La fecha de inicio no puede ser anterior a hoy"}, status=status.HTTP_400_BAD_REQUEST)
 				wt = (item or {}).get('weekly_template') or {}
 				name = ((item or {}).get('name') or '')[:200]
 				if isinstance(wt, dict) and wt:
@@ -1433,8 +1491,8 @@ def services_search(request):
 		SELECT sp.id_servicio_profesional, cs.nombre AS categoria, cs.slug, sp.descripcion,
 			   sp.anos_experiencia, sp.tipo_duracion, sp.duracion_fija_minutos,
 			   sp.duracion_minima_minutos, sp.duracion_maxima_minutos, sp.precio_fijo,
-		   u.nombres, u.apellidos, u.email, u.telefono, u.genero,
-		   u.foto_perfil_url,
+	   u.nombres, u.apellidos, u.email, u.telefono, u.genero,
+	   NULL AS foto_perfil_url,
 			   c.nombre AS comuna_nombre, r.nombre AS region_nombre
 		FROM servicio_profesional sp
 		JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
@@ -1622,3 +1680,646 @@ def toggle_service_visibility(request, service_id: str):
 			)
 
 	return Response({"ok": True, "service_id": service_id, "is_active": is_active})
+
+
+@api_view(["GET"])
+def service_availability(request, service_id: str):
+	"""Public availability for a given servicio_profesional.
+	Query params:
+	  - start: YYYY-MM-DD (default today)
+	  - end: YYYY-MM-DD (default start + 14 days, max window 31 days)
+	  - slot: integer minutes (optional; defaults from servicio config or 60)
+	Response shape:
+	{
+	  service_id, timezone, slot_minutes,
+	  days: [{ date: 'YYYY-MM-DD', slots: [{start:'HH:MM', end:'HH:MM'}] }]
+	}
+	Notes:
+	- Only returns for services with estado_verificacion='aprobado'.
+	- Applies custom periods by day when present; otherwise weekly template.
+	- Excludes days in dia_bloqueado ranges.
+	- Excludes past times for the current day.
+	"""
+	service_id_str = str(service_id)
+	# Parse dates
+	try:
+		tz_now = timezone.localtime()
+		today = tz_now.date()
+	except Exception:
+		tz_now = datetime.now()
+		today = tz_now.date()
+	def _parse_date(s: Optional[str], default: date) -> date:
+		try:
+			return datetime.fromisoformat((s or '').strip()).date()
+		except Exception:
+			return default
+
+	sd = _parse_date(request.query_params.get('start'), today)
+	ed = _parse_date(request.query_params.get('end'), sd + timedelta(days=14))
+	if ed < sd:
+		ed = sd
+	# Clamp window to 31 days max
+	if (ed - sd).days > 31:
+		ed = sd + timedelta(days=31)
+
+	# Service config
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT estado_verificacion, lower(coalesce(tipo_duracion,'')) AS tipo,
+				   duracion_fija_minutos, duracion_minima_minutos, duracion_maxima_minutos
+			FROM servicio_profesional
+			WHERE id_servicio_profesional=%s
+			""",
+			[service_id_str],
+		)
+		row = cur.fetchone()
+	if not row:
+		return Response({"message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+	estado, tipo_dur, dur_fija, dur_min, dur_max = row
+	if (estado or '').lower() != 'aprobado':
+		return Response({"message": "Servicio no disponible"}, status=status.HTTP_403_FORBIDDEN)
+	# Determinar longitud de cada cupo (duración efectiva) y el paso entre cupos
+	slot_minutes = None  # duración del cupo a mostrar
+	step_minutes = None  # separación entre inicios consecutivos
+	try:
+		override = int(request.query_params.get('slot') or 0)
+		slot_minutes = override or None
+		step_minutes = override or None
+	except Exception:
+		slot_minutes = None
+		step_minutes = None
+	if not slot_minutes or not step_minutes:
+		# Regla solicitada:
+		# - Duración fija: usar duracion_fija_minutos como duración y como paso.
+		# - Rango (min-max): usar el máximo como duración y también como paso (para avanzar cada 3h si rango 1-3h).
+		if (tipo_dur or '') in ('fija', 'fixed') and dur_fija:
+			slot_minutes = slot_minutes or int(dur_fija)
+			step_minutes = step_minutes or int(dur_fija)
+		else:
+			# Rango; si hay máximo úsalo, si no, cae al mínimo; sino, 60
+			if dur_max:
+				val = int(dur_max)
+			elif dur_min:
+				val = int(dur_min)
+			else:
+				val = 60
+			# Garantizar un mínimo de 15 minutos y múltiplos razonables
+			val = max(15, val)
+			slot_minutes = slot_minutes or val
+			step_minutes = step_minutes or val
+
+	# Weekly template
+	weekly = {i: [] for i in range(7)}  # 0=Mon .. 6=Sun for Python; DB usa 0=Lun..6=Dom
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT dia_semana, to_char(hora_inicio,'HH24:MI'), to_char(hora_fin,'HH24:MI')
+			FROM horario_profesional
+			WHERE id_servicio_profesional=%s
+			ORDER BY dia_semana, hora_inicio
+			""",
+			[service_id_str],
+		)
+		for ds, hi, hf in cur.fetchall():
+			# DB y Python alineados: 0=Lun..6=Dom
+			try:
+				py_idx = int(ds)
+			except Exception:
+				continue
+			weekly[py_idx].append((hi, hf))
+
+	# Custom periods (daily rows)
+	custom_by_date: dict[str, list[tuple[str, str]]] = {}
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT fecha_inicio::date AS d, to_char(hora_inicio,'HH24:MI'), to_char(hora_fin,'HH24:MI')
+			FROM periodo_personalizado
+			WHERE id_servicio_profesional=%s AND fecha_inicio::date BETWEEN %s AND %s
+			ORDER BY d, hora_inicio
+			""",
+			[service_id_str, sd, ed],
+		)
+		for d, hi, hf in cur.fetchall():
+			key = d.isoformat() if hasattr(d, 'isoformat') else str(d)
+			custom_by_date.setdefault(key, []).append((hi, hf))
+
+	# Unavailability ranges -> set of blocked dates
+	# Existing reservations (booked slots) within window (exclude canceled)
+	booked_by_date: dict[str, list[tuple[datetime, datetime]]] = {}
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT fecha_programada, COALESCE(NULLIF(duracion_minutos,0), %s) AS mins, COALESCE(estado,'pendiente')
+			FROM solicitud_servicio
+			WHERE id_servicio_profesional=%s
+			  AND fecha_programada::date BETWEEN %s AND %s
+			  AND COALESCE(estado,'pendiente') <> 'cancelado'
+			""",
+			[slot_minutes, service_id_str, sd, ed],
+		)
+		for fp, mins, _st in cur.fetchall():
+			try:
+				start_dt = fp if isinstance(fp, datetime) else datetime.fromisoformat(str(fp))
+				dur = int(mins or slot_minutes)
+				end_dt = start_dt + timedelta(minutes=dur)
+				key = (start_dt.date()).isoformat()
+				booked_by_date.setdefault(key, []).append((start_dt, end_dt))
+			except Exception:
+				continue
+	blocked: set[str] = set()
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT fecha_inicio::date, fecha_fin::date
+			FROM dia_bloqueado
+			WHERE id_servicio_profesional=%s AND fecha_inicio::date <= %s AND fecha_fin::date >= %s
+			""",
+			[service_id_str, ed, sd],
+		)
+		for d1, d2 in cur.fetchall():
+			c = d1
+			while c <= d2:
+				blocked.add(c.isoformat())
+				c = c + timedelta(days=1)
+
+	# Build slots per day
+	def _gen_slots_for(date_obj: date, intervals: list[tuple[str, str]]):
+		slots = []
+		for hi, hf in intervals:
+			try:
+				start_dt = datetime.combine(date_obj, datetime.strptime(hi, '%H:%M').time())
+				end_dt = datetime.combine(date_obj, datetime.strptime(hf, '%H:%M').time())
+			except Exception:
+				continue
+			cur = start_dt
+			# Generar slots avanzando en step_minutes, cada uno con duración slot_minutes
+			while (cur + timedelta(minutes=slot_minutes)) <= end_dt:
+				# Exclude past
+				if date_obj > today or (date_obj == today and cur.time() >= tz_now.time()):
+					# Excluir solapadas con reservas existentes
+					bks = booked_by_date.get(date_obj.isoformat(), [])
+					cand_start = cur
+					cand_end = cur + timedelta(minutes=slot_minutes)
+					conflict = any((cand_start < b_end and cand_end > b_start) for b_start, b_end in bks)
+					if not conflict:
+						slots.append({
+							'start': cand_start.strftime('%H:%M'),
+							'end':   cand_end.strftime('%H:%M'),
+						})
+				cur = cur + timedelta(minutes=step_minutes)
+		return slots
+
+	days = []
+	cur_day = sd
+	while cur_day <= ed:
+		key = cur_day.isoformat()
+		if key in blocked:
+			days.append({'date': key, 'slots': [], 'template': []})
+		else:
+			if key in custom_by_date:
+				intervals = custom_by_date[key]
+			else:
+				intervals = weekly.get(cur_day.weekday(), [])
+			days.append({
+				'date': key,
+				'slots': _gen_slots_for(cur_day, intervals),
+				'template': [{'start': hi, 'end': hf} for (hi, hf) in intervals],
+			})
+		cur_day = cur_day + timedelta(days=1)
+
+	return Response({
+		'service_id': service_id_str,
+		'timezone': 'America/Santiago',
+		'slot_minutes': slot_minutes,
+		'step_minutes': step_minutes,
+		'days': days,
+	})
+
+
+@api_view(["GET"])
+def service_weekly_template(request, service_id: str):
+	"""Devuelve la plantilla semanal base (horario_profesional) de un servicio aprobado.
+	Response: { monday:{enabled,timeSlots}, ..., sunday:{...} }
+	"""
+	service_id_str = str(service_id)
+	# Verificar que el servicio está aprobado
+	with connection.cursor() as cur:
+		cur.execute("SELECT estado_verificacion FROM servicio_profesional WHERE id_servicio_profesional=%s", [service_id_str])
+		row = cur.fetchone()
+	if not row:
+		return Response({"message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+	if (row[0] or '').lower() != 'aprobado':
+		return Response({"message": "Servicio no disponible"}, status=status.HTTP_403_FORBIDDEN)
+
+	day_names = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+	weekly = {n: {"enabled": False, "timeSlots": []} for n in day_names}
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT dia_semana, to_char(hora_inicio,'HH24:MI'), to_char(hora_fin,'HH24:MI')
+			FROM horario_profesional
+			WHERE id_servicio_profesional=%s
+			ORDER BY dia_semana, hora_inicio
+			""",
+			[service_id_str],
+		)
+		for ds, hi, hf in cur.fetchall():
+			try:
+				py_idx = int(ds)  # DB ya 0=Lun..6=Dom
+				name = day_names[py_idx]
+				weekly[name]["enabled"] = True
+				weekly[name]["timeSlots"].append({"start": hi, "end": hf})
+			except Exception:
+				continue
+
+	return Response(weekly)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def service_book(request, service_id: str):
+	"""Crea una reserva (solicitud_servicio) para un servicio en un cupo disponible.
+	Body JSON esperado:
+	- date: 'YYYY-MM-DD'
+	- start: 'HH:MM' (hora de inicio)
+	- titulo: string (opcional)
+	- descripcion: string (opcional)
+	- address: string (opcional)
+	- region: string (opcional)
+	- district: string (opcional)
+
+	Valida: servicio aprobado, cupo disponible (no pasado, dentro de horario, sin bloqueo, sin solaparse con reservas).
+	Inserta en solicitud_servicio con precio_total = precio_fijo y duracion_minutos = duración del cupo.
+	"""
+	service_id_str = str(service_id)
+	data = request.data or {}
+	date_str = str(data.get('date') or '').strip()
+	start_str = str(data.get('start') or '').strip()
+	titulo = (data.get('titulo') or 'Reserva de servicio').strip()
+	descripcion = (data.get('descripcion') or '').strip()
+	addr = (data.get('address') or '').strip()
+	region_name = (data.get('region') or '').strip() or None
+	district_name = (data.get('district') or '').strip() or None
+
+	if not date_str or not start_str:
+		return Response({"message": "Se requieren 'date' y 'start'"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# Obtener servicio y configuración
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT estado_verificacion, lower(coalesce(tipo_duracion,'')) AS tipo,
+			       duracion_fija_minutos, duracion_minima_minutos, duracion_maxima_minutos,
+			       precio_fijo, rut_usuario
+			FROM servicio_profesional
+			WHERE id_servicio_profesional=%s
+			""",
+			[service_id_str],
+		)
+		row = cur.fetchone()
+	if not row:
+		return Response({"message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+	estado, tipo_dur, dur_fija, dur_min, dur_max, precio, rut_prof = row
+	if (estado or '').lower() != 'aprobado':
+		return Response({"message": "Servicio no disponible"}, status=status.HTTP_403_FORBIDDEN)
+
+	# Duración del cupo
+	if (tipo_dur or '') in ('fija', 'fixed') and dur_fija:
+		dur_minutes = int(dur_fija)
+	else:
+		val = int(dur_max or dur_min or 60)
+		dur_minutes = max(15, val)
+
+	# Parse fecha/hora de inicio
+	try:
+		req_date = datetime.fromisoformat(date_str).date()
+		req_time = datetime.strptime(start_str, '%H:%M').time()
+		start_dt = datetime.combine(req_date, req_time)
+	except Exception:
+		return Response({"message": "Formato de fecha u hora inválido"}, status=status.HTTP_400_BAD_REQUEST)
+	end_dt = start_dt + timedelta(minutes=dur_minutes)
+
+	# Validaciones de tiempo (no pasado)
+	try:
+		now_local = timezone.localtime()
+	except Exception:
+		now_local = datetime.now()
+	if start_dt.date() < now_local.date() or (start_dt.date() == now_local.date() and start_dt.time() < now_local.time()):
+		return Response({"message": "No se puede reservar en el pasado"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# Validar que encaje en el horario (custom o semanal) y no esté bloqueado
+	# Reutilizar lógica del availability a nivel de datos
+	# 1) Bloqueos
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT 1 FROM dia_bloqueado
+			WHERE id_servicio_profesional=%s AND %s::date BETWEEN fecha_inicio::date AND fecha_fin::date
+			LIMIT 1
+			""",
+			[service_id_str, start_dt.date()],
+		)
+		if cur.fetchone():
+			return Response({"message": "El día seleccionado está bloqueado"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# 2) Intervalos del día: custom o semanal
+	intervals: List[Tuple[str, str]] = []
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT to_char(hora_inicio,'HH24:MI'), to_char(hora_fin,'HH24:MI')
+			FROM periodo_personalizado
+			WHERE id_servicio_profesional=%s AND fecha_inicio::date=%s::date
+			ORDER BY hora_inicio
+			""",
+			[service_id_str, start_dt.date()],
+		)
+		rows = cur.fetchall()
+		if rows:
+			intervals = [(r[0], r[1]) for r in rows]
+		else:
+			# semanal
+			weekday = (start_dt.weekday())  # 0=Lun..6=Dom
+			db_day = weekday  # DB alineada 0=Lun..6=Dom
+			cur.execute(
+				"""
+				SELECT to_char(hora_inicio,'HH24:MI'), to_char(hora_fin,'HH24:MI')
+				FROM horario_profesional
+				WHERE id_servicio_profesional=%s AND dia_semana=%s
+				ORDER BY hora_inicio
+				""",
+				[service_id_str, db_day],
+			)
+			intervals = [(r[0], r[1]) for r in cur.fetchall()]
+	if not intervals:
+		return Response({"message": "No hay horario configurado para ese día"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# Verificar que el slot [start_dt, end_dt) cae dentro de algún intervalo del día
+	def _inside_any_interval() -> bool:
+		for hi, hf in intervals:
+			try:
+				I = datetime.combine(start_dt.date(), datetime.strptime(hi, '%H:%M').time())
+				F = datetime.combine(start_dt.date(), datetime.strptime(hf, '%H:%M').time())
+			except Exception:
+				continue
+			if start_dt >= I and end_dt <= F:
+				return True
+		return False
+	if not _inside_any_interval():
+		return Response({"message": "El horario seleccionado no está dentro de la disponibilidad"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# 3) Conflicto con reservas existentes (no canceladas)
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT 1
+			FROM solicitud_servicio
+			WHERE id_servicio_profesional=%s
+			  AND COALESCE(estado,'pendiente') <> 'cancelado'
+			  AND (
+				fecha_programada < %s AND (fecha_programada + (COALESCE(NULLIF(duracion_minutos,0), %s) || ' minutes')::interval) > %s
+			  	OR fecha_programada >= %s AND fecha_programada < %s
+			  )
+			LIMIT 1
+			""",
+			[service_id_str, end_dt, dur_minutes, start_dt, start_dt, end_dt],
+		)
+		if cur.fetchone():
+			return Response({"message": "Ese cupo ya no está disponible"}, status=status.HTTP_409_CONFLICT)
+
+	# Resolver rut_cliente y comuna
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+	with connection.cursor() as cur:
+		_id_region, id_comuna = _resolve_region_comuna(cur, region_name, district_name)
+	if not id_comuna:
+		# Fallback a la comuna del usuario
+		id_comuna = getattr(dom, 'id_comuna', None)
+	if not id_comuna:
+		return Response({"message": "Comuna inválida"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# Dirección: usar la proporcionada o la del usuario
+	if not addr:
+		addr = getattr(dom, 'direccion', '') or 'Dirección no especificada'
+
+	# Insertar solicitud
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			INSERT INTO solicitud_servicio (
+				rut_cliente, rut_profesional, id_servicio_profesional,
+				titulo, descripcion, fecha_programada, duracion_minutos,
+				direccion_servicio, id_comuna_servicio, precio_total,
+				estado, creado_en, actualizado_en
+			) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'pendiente', %s, %s)
+			RETURNING id_solicitud_servicio
+			""",
+			[dom.rut, rut_prof, service_id_str, titulo, descripcion, start_dt, dur_minutes, addr, str(id_comuna), int(precio or 0), timezone.now(), timezone.now()],
+		)
+		new_id = cur.fetchone()[0]
+
+	return Response({
+		"ok": True,
+		"id_solicitud_servicio": str(new_id),
+		"fecha_programada": start_dt.isoformat(),
+		"duracion_minutos": dur_minutes,
+	})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def booking_confirm(request, request_id: str):
+	"""Profesional confirma una solicitud. Cambia estado a 'confirmado' y setea confirmado_en.
+	Solo el profesional dueño puede confirmar.
+	"""
+	# Resolver rut del usuario autenticado
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT rut_profesional, estado FROM solicitud_servicio WHERE id_solicitud_servicio=%s
+			""",
+			[request_id],
+		)
+		row = cur.fetchone()
+	if not row:
+		return Response({"message": "Solicitud no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+	rut_prof, estado = row
+	if str(rut_prof or '') != str(dom.rut or ''):
+		return Response({"message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
+	if (estado or '').lower() in ("cancelado", "completado"):
+		return Response({"message": f"No se puede confirmar una solicitud en estado '{estado}'"}, status=status.HTTP_400_BAD_REQUEST)
+
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			UPDATE solicitud_servicio
+			SET estado='confirmado', confirmado_en=%s, actualizado_en=%s
+			WHERE id_solicitud_servicio=%s
+			""",
+			[timezone.now(), timezone.now(), request_id],
+		)
+
+	return Response({"ok": True, "id_solicitud_servicio": request_id, "estado": "confirmado"})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def booking_cancel(request, request_id: str):
+	"""Cliente o profesional cancela una solicitud. Cambia estado a 'cancelado' y setea cancelado_en/razon_cancelacion.
+	"""
+	reason = (request.data.get('razon') or '').strip() or None
+	# Resolver rut del usuario autenticado
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT rut_cliente, rut_profesional, estado
+			FROM solicitud_servicio
+			WHERE id_solicitud_servicio=%s
+			""",
+			[request_id],
+		)
+		row = cur.fetchone()
+	if not row:
+		return Response({"message": "Solicitud no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+	rut_cli, rut_prof, estado = row
+	if str(dom.rut) not in {str(rut_cli), str(rut_prof)}:
+		return Response({"message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
+	if (estado or '').lower() == 'cancelado':
+		return Response({"ok": True, "id_solicitud_servicio": request_id, "estado": "cancelado"})
+
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			UPDATE solicitud_servicio
+			SET estado='cancelado', cancelado_en=%s, razon_cancelacion=%s, actualizado_en=%s
+			WHERE id_solicitud_servicio=%s
+			""",
+			[timezone.now(), reason, timezone.now(), request_id],
+		)
+
+	return Response({"ok": True, "id_solicitud_servicio": request_id, "estado": "cancelado"})
+	
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def my_requests(request):
+	"""Lista las solicitudes del usuario autenticado.
+	Query param opcional 'as':
+	  - 'client' (default): solicitudes hechas por el usuario como cliente
+	  - 'professional': solicitudes recibidas por el usuario como profesional
+
+	Devuelve una lista de objetos con campos:
+	  - id, service, date, time, status, price
+	  - professional (para 'client') o client, phone, address (para 'professional')
+	"""
+	role = (request.query_params.get('as') or 'client').strip().lower()
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+
+	results = []
+	with connection.cursor() as cur:
+		if role == 'professional':
+			# Solicitudes donde el usuario es el profesional
+			cur.execute(
+				"""
+	  SELECT s.id_solicitud_servicio,
+					   s.fecha_programada,
+					   COALESCE(s.precio_total, 0) AS precio_total,
+					   COALESCE(s.estado,'pendiente') AS estado,
+					   s.direccion_servicio,
+		  s.descripcion,
+					   uc.nombres || ' ' || uc.apellidos AS cliente_nombre,
+					   uc.telefono AS cliente_telefono,
+				   cat.nombre AS categoria,
+				   c.nombre AS comuna_nombre,
+				   r.nombre AS region_nombre
+				FROM solicitud_servicio s
+				JOIN usuario up ON up.rut = s.rut_profesional
+				JOIN usuario uc ON uc.rut = s.rut_cliente
+				LEFT JOIN servicio_profesional sp ON sp.id_servicio_profesional = s.id_servicio_profesional
+				LEFT JOIN categoria_servicio cat ON cat.id_categoria_servicio = sp.id_categoria_servicio
+				LEFT JOIN comuna c ON c.id_comuna = uc.id_comuna
+				LEFT JOIN region r ON r.id_region = c.id_region
+				WHERE s.rut_profesional = %s
+				ORDER BY s.fecha_programada DESC
+				""",
+				[dom.rut],
+			)
+			rows = cur.fetchall()
+			for rid, fp, precio, estado, addr, descp, cli_nom, cli_tel, cat_nom, comuna_nom, region_nom in rows:
+				try:
+					dt = fp if isinstance(fp, datetime) else datetime.fromisoformat(str(fp))
+				except Exception:
+					dt = datetime.now()
+				results.append({
+					'id': str(rid),
+					'service': cat_nom or 'Servicio',
+					'date': dt.date().isoformat(),
+					'time': dt.strftime('%H:%M'),
+					'status': (estado or 'pendiente').capitalize(),
+					'price': int(precio or 0),
+					'client': cli_nom or 'Cliente',
+					'phone': cli_tel or '',
+					'address': addr or '',
+					'description': (descp or '').strip(),
+					'comuna': comuna_nom or '',
+					'region': region_nom or '',
+				})
+		else:
+			# Solicitudes donde el usuario es el cliente
+			cur.execute(
+				"""
+				SELECT s.id_solicitud_servicio,
+					   s.fecha_programada,
+					   COALESCE(s.precio_total, 0) AS precio_total,
+					   COALESCE(s.estado,'pendiente') AS estado,
+					   up.nombres || ' ' || up.apellidos AS profesional_nombre,
+				   cat.nombre AS categoria,
+				   c.nombre AS comuna_nombre,
+				   r.nombre AS region_nombre
+				FROM solicitud_servicio s
+				JOIN usuario uc ON uc.rut = s.rut_cliente
+				LEFT JOIN servicio_profesional sp ON sp.id_servicio_profesional = s.id_servicio_profesional
+				LEFT JOIN usuario up ON up.rut = sp.rut_usuario
+				LEFT JOIN categoria_servicio cat ON cat.id_categoria_servicio = sp.id_categoria_servicio
+				LEFT JOIN comuna c ON c.id_comuna = up.id_comuna
+				LEFT JOIN region r ON r.id_region = c.id_region
+				WHERE s.rut_cliente = %s
+				ORDER BY s.fecha_programada DESC
+				""",
+				[dom.rut],
+			)
+			rows = cur.fetchall()
+			for rid, fp, precio, estado, prof_nom, cat_nom, comuna_nom, region_nom in rows:
+				try:
+					dt = fp if isinstance(fp, datetime) else datetime.fromisoformat(str(fp))
+				except Exception:
+					dt = datetime.now()
+				results.append({
+					'id': str(rid),
+					'service': cat_nom or 'Servicio',
+					'date': dt.date().isoformat(),
+					'time': dt.strftime('%H:%M'),
+					'status': (estado or 'pendiente').capitalize(),
+					'price': int(precio or 0),
+					'professional': prof_nom or 'Profesional',
+					'comuna': comuna_nom or '',
+					'region': region_nom or '',
+				})
+
+	return Response(results)

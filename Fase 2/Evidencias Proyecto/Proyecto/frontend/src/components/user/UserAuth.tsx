@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select"
 import { Checkbox } from "../ui/checkbox"
 import { Separator } from "../ui/separator"
+import { Alert, AlertDescription, AlertTitle } from "../ui/alert"
 import { 
   User, 
   Mail, 
@@ -32,6 +33,7 @@ interface UserAuthProps {
 import { apiGet, apiPost, saveTokens } from "../../lib/api"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
+import { toast } from "sonner"
 
 export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps) {
   const navigate = useNavigate()
@@ -40,6 +42,8 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
     email: "",
     password: ""
   })
+  const [loginSubmitting, setLoginSubmitting] = useState(false)
+  const [loginError, setLoginError] = useState<string>("")
   
   const [registerForm, setRegisterForm] = useState({
     firstName: "",
@@ -57,6 +61,7 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
     acceptTerms: false
   })
   const [registerError, setRegisterError] = useState<string>("")
+  const [registerSubmitting, setRegisterSubmitting] = useState(false)
   const { refreshUser } = useAuth()
   
   // Fecha máxima permitida para nacimiento (18+): hoy - 18 años, formato YYYY-MM-DD
@@ -122,30 +127,38 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!loginForm.email || !loginForm.password) {
-      alert('Por favor, completa todos los campos requeridos')
+      toast.error('Por favor, completa todos los campos requeridos')
       return
     }
     try {
+      setLoginSubmitting(true)
+      setLoginError("")
       const tokens = await apiPost('/api/auth/login/', { username: loginForm.email, password: loginForm.password })
       saveTokens(tokens)
-      const u = await refreshUser()
+      // Navegar de inmediato para evitar quedarse en /login por condiciones de carrera
+      navigate('/cliente', { replace: true })
       onLogin?.(tokens)
-      const role = u?.effective_role
-      if (role === 'administrador') {
-        navigate('/admin')
-        return
-      }
-      if (role === 'verificador') {
-        navigate('/verificador')
-        return
-      }
-      if (role === 'profesional') {
-        navigate('/profesional')
-        return
-      }
-  navigate('/cliente')
+      // Refrescar usuario en segundo plano y ajustar ruta según rol si corresponde
+      ;(async () => {
+        try {
+          const u = await refreshUser()
+          toast.success(`¡Bienvenido${u?.first_name ? ", " + u.first_name : ""}!`)
+          const role = u?.effective_role
+          if (role === 'administrador') { navigate('/admin', { replace: true }); return }
+          if (role === 'verificador') { navigate('/verificador', { replace: true }); return }
+          if (role === 'profesional') { navigate('/profesional', { replace: true }); return }
+          // Si ya estamos en /cliente, no hacer nada
+        } catch { /* ignorar y dejar al usuario en /cliente */ }
+      })()
     } catch (err: any) {
-      alert(err?.message || 'Credenciales inválidas')
+      const raw = err?.message || 'Credenciales inválidas'
+      const friendly = /active account|credentials|401/i.test(String(raw))
+        ? 'Credenciales inválidas: correo o contraseña incorrectos.'
+        : String(raw)
+      setLoginError(friendly)
+      toast.error(friendly)
+    } finally {
+      setLoginSubmitting(false)
     }
   }
 
@@ -226,30 +239,31 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
     if (!registerForm.firstName || !registerForm.lastName || !registerForm.rut ||
         !registerForm.gender || !registerForm.birthDate || !registerForm.email ||
         !registerForm.password || !selectedComunaId || !registerForm.address) {
-      alert('Por favor, completa todos los campos requeridos')
+      toast.error('Por favor, completa todos los campos requeridos')
       return
     }
     if (!isRutValid) {
-      alert('El RUT ingresado no es válido')
+      toast.error('El RUT ingresado no es válido')
       return
     }
     if (!isAdult) {
-      alert('Debes ser mayor de 18 años para registrarte en ServiHogar')
+      toast.error('Debes ser mayor de 18 años para registrarte en ServiHogar')
       return
     }
     if (isTooOld) {
-      alert('La edad máxima permitida es 105 años para registrarte en ServiHogar')
+      toast.error('La edad máxima permitida es 105 años para registrarte en ServiHogar')
       return
     }
     if (registerForm.password !== registerForm.confirmPassword) {
-      alert('Las contraseñas no coinciden')
+      toast.error('Las contraseñas no coinciden')
       return
     }
     if (!registerForm.acceptTerms) {
-      alert('Debes aceptar los términos y condiciones')
+      toast.error('Debes aceptar los términos y condiciones')
       return
     }
     try {
+      setRegisterSubmitting(true)
       const payload: any = {
         first_name: registerForm.firstName,
         last_name: registerForm.lastName,
@@ -274,6 +288,7 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
         // Silenciar errores de /me si la creación fue exitosa (puede ser un tema temporal de CORS/token)
         console.warn('Registro exitoso, pero falló la actualización de sesión (/api/auth/me).')
       }
+      toast.success('Cuenta creada con éxito')
       onLogin?.(data.user)
       const role = u?.effective_role
       if (role === 'administrador') { navigate('/admin'); return }
@@ -284,6 +299,9 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
       // El wrapper ya entrega sólo el mensaje limpio
       const msg = err?.message || 'Intenta nuevamente.'
       setRegisterError(msg)
+      toast.error(msg)
+    } finally {
+      setRegisterSubmitting(false)
     }
   }
 
@@ -340,8 +358,9 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                         placeholder="tu@email.com"
                         className="pl-10"
                         value={loginForm.email}
-                        onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
+                        onChange={(e) => { setLoginForm({...loginForm, email: e.target.value}); if (loginError) setLoginError("") }}
                         required
+                        aria-invalid={!!loginError}
                       />
                     </div>
                   </div>
@@ -356,14 +375,22 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                         placeholder="••••••••"
                         className="pl-10"
                         value={loginForm.password}
-                        onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                        onChange={(e) => { setLoginForm({...loginForm, password: e.target.value}); if (loginError) setLoginError("") }}
                         required
+                        aria-invalid={!!loginError}
                       />
                     </div>
                   </div>
 
-                  <Button type="submit" className="w-full">
-                    Iniciar Sesión
+                  {loginError && (
+                    <Alert variant="destructive">
+                      <AlertTitle>Datos inválidos</AlertTitle>
+                      <AlertDescription>{loginError}</AlertDescription>
+                    </Alert>
+                  )}
+
+                  <Button type="submit" className="w-full" disabled={loginSubmitting}>
+                    {loginSubmitting ? 'Iniciando…' : 'Iniciar Sesión'}
                   </Button>
                 </form>
 
@@ -667,9 +694,9 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
                   <Button 
                     type="submit" 
                     className="w-full" 
-                    disabled={!registerForm.acceptTerms || !isRutValid || !isPhoneValid || !isAdult || isTooOld}
+                    disabled={registerSubmitting || !registerForm.acceptTerms || !isRutValid || !isPhoneValid || !isAdult || isTooOld}
                   >
-                    Crear Cuenta de Usuario
+                    {registerSubmitting ? 'Creando cuenta…' : 'Crear Cuenta de Usuario'}
                   </Button>
                 </form>
               </CardContent>

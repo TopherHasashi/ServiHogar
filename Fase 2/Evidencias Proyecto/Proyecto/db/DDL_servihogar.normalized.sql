@@ -135,6 +135,9 @@ CREATE TABLE horario_profesional (
     UNIQUE(id_servicio_profesional, dia_semana, hora_inicio)
 );
 
+-- Semántica de índice de día: 0=Lunes .. 6=Domingo
+COMMENT ON COLUMN horario_profesional.dia_semana IS '0=Lunes, 1=Martes, 2=Miércoles, 3=Jueves, 4=Viernes, 5=Sábado, 6=Domingo';
+
 CREATE TABLE periodo_personalizado (
     id_periodo_personalizado UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     id_servicio_profesional UUID NOT NULL REFERENCES servicio_profesional(id_servicio_profesional) ON DELETE CASCADE,

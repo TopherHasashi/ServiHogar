@@ -1,11 +1,26 @@
 import UserDashboard from "../components/user/UserDashboardModular"
 import { useAuth } from "../lib/auth"
 import { Navigate } from "react-router-dom"
+import { useEffect, useState } from "react"
+import { getAccessToken } from "../lib/api"
 
 export default function ClientePage() {
-  const { user, loading, logout } = useAuth()
+  const { user, loading, logout, refreshUser } = useAuth()
+  const [checking, setChecking] = useState(false)
 
-  if (loading) {
+  // Si venimos recién de login y ya hay tokens guardados pero el user aún no está cargado,
+  // intenta refrescar la sesión antes de redirigir a /login para evitar el "rebote".
+  useEffect(() => {
+    if (!loading && !user) {
+      const token = getAccessToken()
+      if (token) {
+        setChecking(true)
+        refreshUser().finally(() => setChecking(false))
+      }
+    }
+  }, [loading, user, refreshUser])
+
+  if (loading || checking) {
     return (
       <div className="w-full px-4 py-10">
         <p className="text-gray-600">Cargando…</p>
