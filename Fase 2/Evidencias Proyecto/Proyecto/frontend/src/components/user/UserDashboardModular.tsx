@@ -39,7 +39,7 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
     const load = async () => {
       try {
         const clientReqs = await apiGetAuth('/api/my/requests/?as=client')
-        // Mapea para mantener compatibilidad con UI (rating y review opcionales)
+        // Mapea incluyendo estado de reseña si existe para deshabilitar el botón tras refresco
         setServiceRequests((clientReqs || []).map((r: any) => ({
           id: r.id,
           professional: r.professional,
@@ -50,8 +50,8 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
           price: r.price,
           region: r.region || '',
           comuna: r.comuna || '',
-          rating: null,
-          review: null,
+          rating: typeof r.rating === 'number' ? r.rating : null,
+          review: r.comentario || null,
         })))
       } catch {
         setServiceRequests([])
@@ -244,29 +244,46 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
 
   // La pestaña de búsqueda ahora consume el endpoint público /api/services/search/ directamente
 
-  const handleMarkAsCompleted = (requestId: string) => {
-    setServiceRequests(prev => 
-      prev.map(req => 
-        req.id === requestId 
-          ? { ...req, status: "Completado" }
-          : req
+  const handleMarkAsCompleted = async (requestId: string) => {
+    try {
+      await apiPost(`/api/requests/${requestId}/complete/`, {}, { auth: true })
+      setServiceRequests(prev => 
+        prev.map(req => 
+          req.id === requestId 
+            ? { ...req, status: "Completado" }
+            : req
+        )
       )
-    )
+    } catch (e) {
+      console.error('No se pudo marcar como completado', e)
+      alert('No se pudo marcar como completado. Intenta nuevamente.')
+    }
   }
 
-  const handleSubmitReview = (reviewData: any) => {
-    setServiceRequests(prev => 
-      prev.map(req => 
-        req.id === reviewData.serviceRequestId 
-          ? { 
-              ...req, 
-              rating: reviewData.averageRating,
-              review: reviewData.comment,
-              detailedRatings: reviewData.ratings
-            }
-          : req
+  const handleSubmitReview = async (reviewData: any) => {
+    try {
+      const payload = {
+        comentario: (reviewData.comment || '').trim(),
+        calificacion_calidad: reviewData.calificacion_calidad || reviewData.ratings?.calificacion_calidad || 0,
+        calificacion_puntualidad: reviewData.calificacion_puntualidad || reviewData.ratings?.calificacion_puntualidad || 0,
+        calificacion_comunicacion: reviewData.calificacion_comunicacion || reviewData.ratings?.calificacion_comunicacion || 0,
+      }
+      await apiPost(`/api/requests/${reviewData.serviceRequestId}/review/`, payload, { auth: true })
+      setServiceRequests(prev => 
+        prev.map(req => 
+          req.id === reviewData.serviceRequestId 
+            ? { 
+                ...req, 
+                rating: reviewData.averageRating,
+                review: reviewData.comment,
+                detailedRatings: reviewData.ratings
+              }
+            : req
+        )
       )
-    )
+    } catch (e: any) {
+      alert(e?.message || 'No se pudo enviar la reseña. Intenta nuevamente.')
+    }
   }
 
   const handleUpdateUser = (userData: any) => {

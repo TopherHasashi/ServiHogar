@@ -313,27 +313,49 @@ def comunas(request):
 def categories(request):
 	"""Lista de categorías de servicio (id UUID, nombre, slug)."""
 	with connection.cursor() as cur:
-		cur.execute("SELECT id_categoria_servicio, nombre, slug FROM categoria_servicio ORDER BY nombre")
+		cur.execute(
+			"""
+			SELECT 
+			  id_categoria_servicio,
+			  nombre,
+			  lower(
+			    regexp_replace(
+			      regexp_replace(unaccent(nombre), '[^a-zA-Z0-9]+', '-', 'g'),
+			      '(^-+|-+$)', '', 'g'
+			    )
+			  ) AS slug
+			FROM categoria_servicio
+			ORDER BY nombre
+			"""
+		)
 		rows = cur.fetchall()
 		if not rows:
 			# Seed fallback if table is empty (idempotente por slug/nombre)
-			defaults = [("Gasfitería", "gasfiteria"), ("Limpieza del Hogar", "limpieza"), ("Jardinería", "jardineria")]
-			for nombre, slug in defaults:
+			defaults = ["Gasfitería", "Limpieza del Hogar", "Jardinería"]
+			for nombre in defaults:
 				try:
-					cur.execute(
-						"SELECT 1 FROM categoria_servicio WHERE slug=%s OR lower(nombre)=lower(%s) LIMIT 1",
-						[slug, nombre],
-					)
+					cur.execute("SELECT 1 FROM categoria_servicio WHERE lower(nombre)=lower(%s) LIMIT 1", [nombre])
 					exists = cur.fetchone() is not None
 					if not exists:
-						cur.execute(
-							"INSERT INTO categoria_servicio (id_categoria_servicio, nombre, slug) VALUES (%s, %s, %s)",
-							[str(uuid.uuid4()), nombre, slug],
-						)
+						cur.execute("INSERT INTO categoria_servicio (id_categoria_servicio, nombre) VALUES (%s, %s)", [str(uuid.uuid4()), nombre])
 				except Exception:
 					pass
 			# Reconsultar tras seed
-			cur.execute("SELECT id_categoria_servicio, nombre, slug FROM categoria_servicio ORDER BY nombre")
+			cur.execute(
+				"""
+				SELECT 
+				  id_categoria_servicio,
+				  nombre,
+				  lower(
+				    regexp_replace(
+				      regexp_replace(unaccent(nombre), '[^a-zA-Z0-9]+', '-', 'g'),
+				      '(^-+|-+$)', '', 'g'
+				    )
+				  ) AS slug
+				FROM categoria_servicio
+				ORDER BY nombre
+				"""
+			)
 			rows = cur.fetchall()
 	return Response([
 		{"id": str(r[0]), "nombre": r[1], "slug": r[2]} for r in rows
@@ -779,25 +801,39 @@ def apply_professional(request):
 
 	# Resolver categoría por slug o nombre (robusto: intenta unaccent/like)
 	with connection.cursor() as cur:
+		# Computar slug a partir de nombre (sin requerir columna slug)
+		computed_slug = (
+			"lower("
+			"regexp_replace("
+			"regexp_replace(unaccent(nombre), '[^a-zA-Z0-9]+', '-', 'g'),"
+			"'(^-+|-+$)', '', 'g'"
+			")"
+			")"
+		)
 		try:
 			cur.execute(
-				"""
+				f"""
 				SELECT id_categoria_servicio FROM categoria_servicio
-				WHERE slug = %s OR unaccent(lower(nombre)) = unaccent(lower(%s))
+				WHERE id_categoria_servicio::text = %s
+				   OR {computed_slug} = lower(%s)
+				   OR unaccent(lower(nombre)) = unaccent(lower(%s))
 				   OR unaccent(lower(nombre)) LIKE '%%' || unaccent(lower(%s)) || '%%'
 				LIMIT 1
 				""",
-				[category_slug, category_slug, category_slug],
+				[category_slug, category_slug, category_slug, category_slug],
 			)
 		except Exception:
+			# Fallback sin unaccent
 			cur.execute(
-				"""
+				f"""
 				SELECT id_categoria_servicio FROM categoria_servicio
-				WHERE slug = %s OR lower(nombre) = lower(%s)
+				WHERE id_categoria_servicio::text = %s
+				   OR lower(regexp_replace(regexp_replace(nombre, '[^a-zA-Z0-9]+', '-', 'g'), '(^-+|-+$)', '', 'g')) = lower(%s)
+				   OR lower(nombre) = lower(%s)
 				   OR lower(nombre) LIKE '%%' || lower(%s) || '%%'
 				LIMIT 1
 				""",
-				[category_slug, category_slug, category_slug],
+				[category_slug, category_slug, category_slug, category_slug],
 			)
 		row = cur.fetchone()
 	if not row:
@@ -868,16 +904,50 @@ def apply_professional(request):
 			# Si no hay MEDIA_ROOT, usar almacenamiento por defecto en memoria/FS
 			media_base = ''
 
-		def _save_uploaded(file_obj, subdir: str):
-			filename = file_obj.name
+		def _save_uploaded(file_obj, subdir: str, force_basename: Optional[str] = None):
+			# Determinar nombre con posible forzado (incluye extensión si se desea)
+			orig_name = getattr(file_obj, 'name', 'archivo')
+			base, ext = os.path.splitext(orig_name)
+			if not ext:
+				# Mapear desde MIME a extensión básica
+				mime = getattr(file_obj, 'content_type', None) or ''
+				if 'pdf' in mime:
+					ext = '.pdf'
+				elif 'jpeg' in mime or 'jpg' in mime:
+					ext = '.jpg'
+				elif 'png' in mime:
+					ext = '.png'
+				else:
+					ext = ''
+			filename = force_basename if force_basename else (base + ext)
 			rel_path = os.path.join('uploads', 'profesionales', dom.rut, subdir, filename)
 			# Asegurar directorio y guardar
 			path = default_storage.save(rel_path, ContentFile(file_obj.read()))
-			return default_storage.url(path) if hasattr(default_storage, 'url') else (settings.MEDIA_URL + path if getattr(settings, 'MEDIA_URL', None) else path)
+			return path, (default_storage.url(path) if hasattr(default_storage, 'url') else (settings.MEDIA_URL + path if getattr(settings, 'MEDIA_URL', None) else path))
 
 		# Helper: Inserta documento en documento_profesional acorde al esquema actual
-		def _insert_documento(tipo_key: str, url_doc: str, mime: Optional[str]) -> bool:
+		def _insert_documento(tipo_key: str, file_obj) -> Optional[str]:
 			tdoc = 'certificado_antecedentes' if tipo_key.lower().startswith('cert') else 'certificado_experiencia'
+			# Pre-generar ID para usarlo en el nombre del archivo
+			doc_id = uuid.uuid4()
+			# Elegir subcarpeta
+			subdir = 'certificados' if tdoc == 'certificado_antecedentes' else 'experiencia'
+			# Forzar nombre como <uuid><ext>
+			orig_name = getattr(file_obj, 'name', 'archivo')
+			_, ext = os.path.splitext(orig_name)
+			if not ext:
+				mime = getattr(file_obj, 'content_type', None) or ''
+				if 'pdf' in mime:
+					ext = '.pdf'
+				elif 'jpeg' in mime or 'jpg' in mime:
+					ext = '.jpg'
+				elif 'png' in mime:
+					ext = '.png'
+				else:
+					ext = ''
+			forced_name = f"{doc_id}{ext}"
+			stored_rel_path, url_doc = _save_uploaded(file_obj, subdir, forced_name)
+			mime = getattr(file_obj, 'content_type', None)
 			sp = transaction.savepoint()
 			try:
 				with connection.cursor() as cur:
@@ -885,26 +955,27 @@ def apply_professional(request):
 						"""
 						INSERT INTO documento_profesional (
 							id_documento_profesional, rut_usuario, id_servicio_profesional,
-							tipo_documento, url_archivo, tipo_mime, estado_verificacion, subido_en
-						) VALUES (%s,%s,%s,%s,%s,%s,'pendiente',%s)
+							tipo_documento, tipo_mime, estado_verificacion, subido_en
+						) VALUES (%s,%s,%s,%s,%s,'pendiente',%s)
 						""",
 						[
-							str(uuid.uuid4()), dom.rut, str(id_serv), tdoc, url_doc, (mime or None), now
+							str(doc_id), dom.rut, str(id_serv), tdoc, (mime or None), now
 						],
 					)
-				transaction.savepoint_commit(sp)
-				return True
+				tx_ok = True
 			except IntegrityError:
+				tx_ok = False
 				transaction.savepoint_rollback(sp)
-				return False
+			else:
+				transaction.savepoint_commit(sp)
+			return (url_doc if tx_ok else None)
 
 		# Guardar certificado (obligatorio solo en primer servicio)
 		# Guardar certificado (obligatorio solo en primer servicio)
 		if es_primer:
 			if cert_file:
-				url = _save_uploaded(cert_file, 'certificados')
-				ok = _insert_documento('cert', url, getattr(cert_file, 'content_type', None))
-				if not ok:
+				url = _insert_documento('cert', cert_file)
+				if not url:
 					transaction.set_rollback(True)
 					return Response({"message": "No se pudo registrar el certificado"}, status=status.HTTP_400_BAD_REQUEST)
 				saved_docs.append(url)
@@ -913,9 +984,8 @@ def apply_professional(request):
 
 		# Guardar documentos de experiencia
 		for ef in exp_files:
-			url = _save_uploaded(ef, 'experiencia')
-			ok = _insert_documento('exp', url, getattr(ef, 'content_type', None))
-			if not ok:
+			url = _insert_documento('exp', ef)
+			if not url:
 				transaction.set_rollback(True)
 				return Response({"message": "No se pudo registrar un documento de experiencia"}, status=status.HTTP_400_BAD_REQUEST)
 			saved_docs.append(url)
@@ -970,7 +1040,7 @@ def verifications_pending(request):
 			cur.execute(
 				f"""
 				SELECT id_documento_profesional, id_servicio_profesional, tipo_documento,
-					   url_archivo, subido_en
+				       rut_usuario, subido_en
 				FROM documento_profesional
 				WHERE id_servicio_profesional IN ({placeholders})
 				ORDER BY subido_en DESC
@@ -978,24 +1048,43 @@ def verifications_pending(request):
 				params,
 			)
 			for d in cur.fetchall():
-				# Normalizar URL absoluta para previsualización en el frontend
-				raw_url = d[3] or ""
-				if raw_url and raw_url.startswith('/'):
+				# Reconstruir URL del archivo buscando por patrón <uuid>.* en la carpeta correspondiente
+				_doc_id = str(d[0])
+				_sid = str(d[1])
+				_tipo = d[2]
+				_rut = d[3]
+				_subido = d[4]
+				subdir = 'certificados' if (_tipo == 'certificado_antecedentes') else 'experiencia'
+				base_dir = os.path.join('uploads', 'profesionales', _rut, subdir)
+				# Buscar primer archivo que empiece con el UUID
+				found_url = None
+				try:
+					if hasattr(default_storage, 'listdir'):
+						# listdir devuelve (dirs, files)
+						_, files = default_storage.listdir(base_dir)
+						for fname in files:
+							if fname.startswith(_doc_id):
+								candidate = os.path.join(base_dir, fname)
+								found_url = default_storage.url(candidate) if hasattr(default_storage, 'url') else (settings.MEDIA_URL + candidate if getattr(settings, 'MEDIA_URL', None) else candidate)
+								break
+				except Exception:
+					found_url = None
+				# Normalizar URL absoluta
+				if found_url and found_url.startswith('/'):
 					try:
-						abs_url = request.build_absolute_uri(raw_url)
+						abs_url = request.build_absolute_uri(found_url)
 					except Exception:
-						abs_url = raw_url
+						abs_url = found_url
 				else:
-					abs_url = raw_url
+					abs_url = found_url
 				doc = {
-					"id_documento_profesional": str(d[0]),
-					"id_servicio_profesional": str(d[1]),
-					"tipo_documento": d[2],
+					"id_documento_profesional": _doc_id,
+					"id_servicio_profesional": _sid,
+					"tipo_documento": _tipo,
 					"url_archivo": abs_url,
-					"subido_en": d[4].isoformat() if d[4] else None,
+					"subido_en": _subido.isoformat() if _subido else None,
 				}
-				sid = str(d[1])
-				docs_by_service.setdefault(sid, []).append(doc)
+				docs_by_service.setdefault(_sid, []).append(doc)
 
 	items = []
 	for r in rows:
@@ -1488,7 +1577,14 @@ def services_search(request):
 	# Construir SQL dinámico de forma segura
 	sql = [
 		"""
-		SELECT sp.id_servicio_profesional, cs.nombre AS categoria, cs.slug, sp.descripcion,
+		SELECT sp.id_servicio_profesional, cs.nombre AS categoria,
+		       lower(
+		         regexp_replace(
+		           regexp_replace(unaccent(cs.nombre), '[^a-zA-Z0-9]+', '-', 'g'),
+		           '(^-+|-+$)', '', 'g'
+		         )
+		       ) AS slug,
+		       sp.descripcion,
 			   sp.anos_experiencia, sp.tipo_duracion, sp.duracion_fija_minutos,
 			   sp.duracion_minima_minutos, sp.duracion_maxima_minutos, sp.precio_fijo,
 	   u.nombres, u.apellidos, u.email, u.telefono, u.genero,
@@ -1505,13 +1601,18 @@ def services_search(request):
 	params: list = []
 
 	if category_slug:
-	  	# igualar por slug o por nombre aproximado
-		try:
-			sql.append("AND (cs.slug = %s OR unaccent(lower(cs.nombre)) = unaccent(lower(%s)))")
-			params.extend([category_slug, category_slug])
-		except Exception:
-			sql.append("AND (cs.slug = %s OR lower(cs.nombre) = lower(%s))")
-			params.extend([category_slug, category_slug])
+	  	# igualar por slug calculado o por nombre sin acentos
+		computed_slug = (
+			"lower("
+			"regexp_replace("
+			"regexp_replace(unaccent(cs.nombre), '[^a-zA-Z0-9]+', '-', 'g'),"
+			"'(^-+|-+$)', '', 'g'"
+			")"
+			")"
+		)
+		# Comparar contra slug calculado o por nombre normalizado
+		sql.append(f"AND ({computed_slug} = lower(%s) OR unaccent(lower(cs.nombre)) = unaccent(lower(%s)))")
+		params.extend([category_slug, category_slug])
 
 	if region_id:
 		sql.append("AND r.id_region = %s")
@@ -2145,15 +2246,17 @@ def booking_confirm(request, request_id: str):
 	with connection.cursor() as cur:
 		cur.execute(
 			"""
-			SELECT rut_profesional, estado FROM solicitud_servicio WHERE id_solicitud_servicio=%s
+			SELECT rut_cliente, rut_profesional, estado 
+			FROM solicitud_servicio 
+			WHERE id_solicitud_servicio=%s
 			""",
 			[request_id],
 		)
 		row = cur.fetchone()
 	if not row:
 		return Response({"message": "Solicitud no encontrada"}, status=status.HTTP_404_NOT_FOUND)
-	rut_prof, estado = row
-	if str(rut_prof or '') != str(dom.rut or ''):
+	rut_cli, rut_prof, estado = row
+	if str(dom.rut or '') not in {str(rut_cli or ''), str(rut_prof or '')}:
 		return Response({"message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
 	if (estado or '').lower() in ("cancelado", "completado"):
 		return Response({"message": f"No se puede confirmar una solicitud en estado '{estado}'"}, status=status.HTTP_400_BAD_REQUEST)
@@ -2212,6 +2315,157 @@ def booking_cancel(request, request_id: str):
 		)
 
 	return Response({"ok": True, "id_solicitud_servicio": request_id, "estado": "cancelado"})
+
+	
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def booking_complete(request, request_id: str):
+	"""Profesional marca como completada una solicitud. Cambia estado a 'completado' y setea completado_en.
+	Solo el profesional dueño puede completar.
+	"""
+	# Resolver rut del usuario autenticado
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT rut_profesional, estado FROM solicitud_servicio WHERE id_solicitud_servicio=%s
+			""",
+			[request_id],
+		)
+		row = cur.fetchone()
+	if not row:
+		return Response({"message": "Solicitud no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+	rut_prof, estado = row
+	if str(rut_prof or '') != str(dom.rut or ''):
+		return Response({"message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
+	if (estado or '').lower() in ("cancelado", "completado"):
+		return Response({"message": f"No se puede completar una solicitud en estado '{estado}'"}, status=status.HTTP_400_BAD_REQUEST)
+
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			UPDATE solicitud_servicio
+			SET estado='completado', completado_en=%s, actualizado_en=%s
+			WHERE id_solicitud_servicio=%s
+			""",
+			[timezone.now(), timezone.now(), request_id],
+		)
+
+	return Response({"ok": True, "id_solicitud_servicio": request_id, "estado": "completado"})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def create_review(request, request_id: str):
+	"""Cliente crea una reseña para una solicitud completada.
+	Body esperado: {
+	  comentario: string,
+	  calificacion_calidad: int (1..5),
+	  calificacion_puntualidad: int (1..5),
+	  calificacion_comunicacion: int (1..5)
+	}
+	Reglas:
+	- Debe ser el cliente dueño de la solicitud
+	- La solicitud debe estar en estado 'completado'
+	- Solo una reseña por solicitud (resena.id_solicitud_servicio UNIQUE)
+	"""
+	data = request.data or {}
+	comentario = (data.get('comentario') or data.get('comment') or '').strip()
+
+	def _norm_int(key: str) -> int:
+		try:
+			v = int(data.get(key))
+			return v
+		except Exception:
+			return 0
+
+	cal_calidad = _norm_int('calificacion_calidad')
+	cal_puntualidad = _norm_int('calificacion_puntualidad')
+	cal_comunicacion = _norm_int('calificacion_comunicacion')
+
+	# Validaciones básicas 1..5
+	for k, v in (
+		('calificacion_calidad', cal_calidad),
+		('calificacion_puntualidad', cal_puntualidad),
+		('calificacion_comunicacion', cal_comunicacion),
+	):
+		if not (1 <= v <= 5):
+			return Response({"message": f"{k} debe estar entre 1 y 5"}, status=status.HTTP_400_BAD_REQUEST)
+	if len(comentario) < 3:
+		# Comentario opcional en esquema, pero exigimos algo mínimo si viene vacio del frontend
+		comentario = comentario or None
+
+	# Resolver identidad del cliente autenticado
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# Cargar solicitud y validar propiedad/estado
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT rut_cliente, rut_profesional, estado
+			FROM solicitud_servicio
+			WHERE id_solicitud_servicio=%s
+			""",
+			[request_id],
+		)
+		row = cur.fetchone()
+	if not row:
+		return Response({"message": "Solicitud no encontrada"}, status=status.HTTP_404_NOT_FOUND)
+	rut_cli, rut_prof, estado = row
+	if str(rut_cli or '') != str(dom.rut or ''):
+		return Response({"message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
+	if (estado or '').lower() != 'completado':
+		return Response({"message": "Solo se puede calificar una solicitud completada"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# Verificar que no exista reseña previa (UNIQUE por id_solicitud_servicio)
+	with connection.cursor() as cur:
+		cur.execute("SELECT 1 FROM resena WHERE id_solicitud_servicio=%s", [request_id])
+		if cur.fetchone():
+			return Response({"message": "Esta solicitud ya tiene una reseña"}, status=status.HTTP_409_CONFLICT)
+
+	# Insertar reseña
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			INSERT INTO resena (
+				id_solicitud_servicio,
+				rut_evaluador,
+				rut_evaluado,
+				comentario,
+				calificacion_puntualidad,
+				calificacion_calidad,
+				calificacion_comunicacion,
+				creado_en,
+				actualizado_en
+			) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+			RETURNING id_resena
+			""",
+			[
+				str(request_id), str(rut_cli), str(rut_prof), comentario or None,
+				int(cal_puntualidad), int(cal_calidad), int(cal_comunicacion),
+				timezone.now(), timezone.now(),
+			],
+		)
+		new_id = cur.fetchone()[0]
+
+	return Response({
+		"ok": True,
+		"id_resena": str(new_id),
+		"id_solicitud_servicio": str(request_id),
+		"rut_evaluador": str(rut_cli),
+		"rut_evaluado": str(rut_prof),
+		"comentario": comentario,
+		"calificacion_calidad": cal_calidad,
+		"calificacion_puntualidad": cal_puntualidad,
+		"calificacion_comunicacion": cal_comunicacion,
+	})
 	
 @api_view(["GET"])
 @permission_classes([permissions.IsAuthenticated])
@@ -2289,9 +2543,14 @@ def my_requests(request):
 					   COALESCE(s.precio_total, 0) AS precio_total,
 					   COALESCE(s.estado,'pendiente') AS estado,
 					   up.nombres || ' ' || up.apellidos AS profesional_nombre,
-				   cat.nombre AS categoria,
-				   c.nombre AS comuna_nombre,
-				   r.nombre AS region_nombre
+			   cat.nombre AS categoria,
+			   c.nombre AS comuna_nombre,
+			   r.nombre AS region_nombre,
+			   re.comentario AS resena_comentario,
+			   CASE 
+			     WHEN re.id_resena IS NULL THEN NULL
+			     ELSE ROUND((COALESCE(re.calificacion_calidad,0) + COALESCE(re.calificacion_puntualidad,0) + COALESCE(re.calificacion_comunicacion,0)) / 3.0, 1)
+			   END AS resena_promedio
 				FROM solicitud_servicio s
 				JOIN usuario uc ON uc.rut = s.rut_cliente
 				LEFT JOIN servicio_profesional sp ON sp.id_servicio_profesional = s.id_servicio_profesional
@@ -2299,17 +2558,23 @@ def my_requests(request):
 				LEFT JOIN categoria_servicio cat ON cat.id_categoria_servicio = sp.id_categoria_servicio
 				LEFT JOIN comuna c ON c.id_comuna = up.id_comuna
 				LEFT JOIN region r ON r.id_region = c.id_region
+				LEFT JOIN resena re ON re.id_solicitud_servicio = s.id_solicitud_servicio
 				WHERE s.rut_cliente = %s
 				ORDER BY s.fecha_programada DESC
 				""",
 				[dom.rut],
 			)
 			rows = cur.fetchall()
-			for rid, fp, precio, estado, prof_nom, cat_nom, comuna_nom, region_nom in rows:
+			for rid, fp, precio, estado, prof_nom, cat_nom, comuna_nom, region_nom, res_com, res_avg in rows:
 				try:
 					dt = fp if isinstance(fp, datetime) else datetime.fromisoformat(str(fp))
 				except Exception:
 					dt = datetime.now()
+				# Convertir promedio a float simple
+				try:
+					avg = float(res_avg) if res_avg is not None else None
+				except Exception:
+					avg = None
 				results.append({
 					'id': str(rid),
 					'service': cat_nom or 'Servicio',
@@ -2320,6 +2585,8 @@ def my_requests(request):
 					'professional': prof_nom or 'Profesional',
 					'comuna': comuna_nom or '',
 					'region': region_nom or '',
+					'comentario': res_com or None,
+					'rating': avg,
 				})
 
 	return Response(results)

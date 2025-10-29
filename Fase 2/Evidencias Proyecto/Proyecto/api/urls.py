@@ -22,6 +22,8 @@ from .views import (
     service_book,
     booking_confirm,
     booking_cancel,
+    booking_complete,
+    create_review,
     service_weekly_template,
     my_requests,
 )
@@ -57,6 +59,8 @@ urlpatterns = [
     path("services/<uuid:service_id>/book/", service_book, name="service_book"),
     path("requests/<uuid:request_id>/confirm/", booking_confirm, name="booking_confirm"),
     path("requests/<uuid:request_id>/cancel/", booking_cancel, name="booking_cancel"),
+    path("requests/<uuid:request_id>/complete/", booking_complete, name="booking_complete"),
+    path("requests/<uuid:request_id>/review/", create_review, name="create_review"),
     path("my/requests/", my_requests, name="my_requests"),
     path("services/<uuid:service_id>/visibility/", toggle_service_visibility, name="toggle_service_visibility"),
 ]
