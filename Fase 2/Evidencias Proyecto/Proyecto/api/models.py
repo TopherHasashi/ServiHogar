@@ -27,26 +27,26 @@ class Profile(models.Model):
 
 
 class UsuarioDominio(models.Model):
-	"""Modelo no gestionado que mapea la tabla `usuario` v3.0 (RUT como PK, id_comuna UUID)."""
+	"""Unmanaged mapping a la tabla `usuario` definida en DDL (RUT como PK, id_comuna UUID).
+
+	Importante: Los campos deben reflejar exactamente las columnas reales de la tabla.
+	"""
 	# PK v3.0
 	rut = models.CharField(max_length=12, primary_key=True)
 	# Campos obligatorios
 	nombres = models.CharField(max_length=100)
 	apellidos = models.CharField(max_length=100)
 	email = models.EmailField(unique=True)
-	hash_contrasena = models.CharField(max_length=255)
 	telefono = models.CharField(max_length=20)
 	genero = models.CharField(max_length=20)
-	fecha_nacimiento = models.DateField()
+	# En la tabla es TIMESTAMP NOT NULL; lo modelamos como DateTimeField
+	fecha_nacimiento = models.DateTimeField()
 	id_comuna = models.UUIDField()
 	direccion = models.TextField()
 	rol = models.CharField(max_length=20, default="cliente")
-	# Foto de perfil (URL) almacenada en la tabla principal `usuario`
-	foto_perfil_url = models.TextField(null=True)
-	# Opcionales/flags básicos
+	# Flags/campos opcionales existentes en DDL
 	email_verificado = models.BooleanField(default=False)
-	telefono_verificado = models.BooleanField(default=False)
-	perfil_publico = models.BooleanField(default=True)
+	ultima_actividad = models.DateTimeField(null=True)
 	creado_en = models.DateTimeField()
 	actualizado_en = models.DateTimeField()
 

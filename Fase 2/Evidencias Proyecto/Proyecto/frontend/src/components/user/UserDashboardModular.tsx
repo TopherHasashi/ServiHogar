@@ -26,83 +26,95 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
   const [professionalStatus, setProfessionalStatus] = useState<'none' | 'pending' | 'rejected' | 'approved'>('none')
   const [rejectionReason, setRejectionReason] = useState<string | null>(null)
 
-  // Datos simulados de solicitudes de servicios como CLIENTE
-  const [serviceRequests, setServiceRequests] = useState([
-    {
-      id: "REQ-001",
-      professional: "Juan Carlos Pérez",
-      service: "Gasfitería", 
-      date: "2024-01-15",
-      time: "14:00",
-      status: "Completado",
-      price: 35000,
-      rating: 5,
-      review: "Excelente trabajo, muy profesional y puntual."
-    },
-    {
-      id: "REQ-002", 
-      professional: "María Elena González",
-      service: "Limpieza del Hogar",
-      date: "2024-01-20",
-      time: "09:00", 
-      status: "Confirmado",
-      price: 45000,
-      rating: null,
-      review: null
-    },
-    {
-      id: "REQ-003",
-      professional: "Carlos Rodríguez", 
-      service: "Jardinería",
-      date: "2024-01-18",
-      time: "08:00",
-      status: "Pendiente",
-      price: 60000,
-      rating: null,
-      review: null
-    }
-  ])
+  // Mis solicitudes reales (como cliente)
+  const [serviceRequests, setServiceRequests] = useState<any[]>([])
 
   // Datos simulados de solicitudes COMO PROFESIONAL (servicios que le han reservado)
   // Solo existen si el usuario ya es profesional
-  const professionalBookings = user.isProfessional ? [
-    {
-      id: "BOOK-001",
-      client: "Ana María López",
-      service: "Gasfitería",
-      date: "2024-01-22",
-      time: "10:00",
-      status: "Pendiente",
-      price: 25000,
-      address: "Av. Providencia 1234, Providencia",
-      phone: "+56 9 8765 4321",
-      description: "Reparación de llave de cocina y revisión de cañerías."
-    },
-    {
-      id: "BOOK-002",
-      client: "Roberto Silva",
-      service: "Gasfitería", 
-      date: "2024-01-25",
-      time: "15:00",
-      status: "Confirmado",
-      price: 28000,
-      address: "Los Aromos 567, Ñuñoa",
-      phone: "+56 9 1234 5678",
-      description: "Instalación de calefont nuevo y conexión de gas."
-    },
-    {
-      id: "BOOK-003",
-      client: "Patricia Morales",
-      service: "Gasfitería",
-      date: "2024-01-19",
-      time: "09:00",
-      status: "Completado",
-      price: 30000,
-      address: "San Martín 890, Santiago Centro",
-      phone: "+56 9 9876 5432",
-      description: "Mantención general de sistema de agua caliente."
+  // Reservas recibidas como profesional
+  const [professionalBookings, setProfessionalBookings] = useState<any[]>([])
+
+  // Cargar "Mis Solicitudes" reales desde backend
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const clientReqs = await apiGetAuth('/api/my/requests/?as=client')
+        // Mapea para mantener compatibilidad con UI (rating y review opcionales)
+        setServiceRequests((clientReqs || []).map((r: any) => ({
+          id: r.id,
+          professional: r.professional,
+          service: r.service,
+          date: r.date,
+          time: r.time,
+          status: r.status,
+          price: r.price,
+          region: r.region || '',
+          comuna: r.comuna || '',
+          rating: null,
+          review: null,
+        })))
+      } catch {
+        setServiceRequests([])
+      }
+
+      if (user.isProfessional) {
+        try {
+          const profReqs = await apiGetAuth('/api/my/requests/?as=professional')
+          setProfessionalBookings((profReqs || []).map((r: any) => ({
+            id: r.id,
+            client: r.client,
+            service: r.service,
+            date: r.date,
+            time: r.time,
+            status: r.status,
+            price: r.price,
+            address: r.address,
+            phone: r.phone,
+            description: r.description || '',
+            region: r.region || '',
+            comuna: r.comuna || '',
+          })))
+        } catch {
+          setProfessionalBookings([])
+        }
+      } else {
+        setProfessionalBookings([])
+      }
     }
-  ] : []
+    load()
+  }, [user.isProfessional])
+
+  // Acciones del profesional sobre reservas
+  const handleConfirmBooking = async (id: string) => {
+    try {
+      await apiPost(`/api/requests/${id}/confirm/`, {}, { auth: true })
+      setProfessionalBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'Confirmado' } : b))
+    } catch (e) {
+      console.error('No se pudo confirmar la solicitud', e)
+      alert('No se pudo confirmar la solicitud. Intenta nuevamente.')
+    }
+  }
+
+  const handleCancelBooking = async (id: string) => {
+    try {
+      await apiPost(`/api/requests/${id}/cancel/`, { razon: 'Cancelado por profesional' }, { auth: true })
+      setProfessionalBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'Cancelado' } : b))
+    } catch (e) {
+      console.error('No se pudo cancelar la solicitud', e)
+      alert('No se pudo cancelar la solicitud. Intenta nuevamente.')
+    }
+  }
+
+  // Cancelación por parte del cliente en "Mis Solicitudes"
+  const handleCancelClientRequest = async (id: string) => {
+    try {
+      await apiPost(`/api/requests/${id}/cancel/`, { razon: 'Cancelado por cliente' }, { auth: true })
+      setServiceRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'Cancelado' } : r))
+    } catch (e) {
+      console.error('No se pudo cancelar la solicitud (cliente)', e)
+      alert('No se pudo cancelar la solicitud. Intenta nuevamente.')
+    }
+  }
 
   // Simular datos del perfil profesional multiservicio si ya es profesional
   const [userProfessionalProfile, setUserProfessionalProfile] = useState(
@@ -389,6 +401,9 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
               professionalBookings={professionalBookings}
               onMarkAsCompleted={handleMarkAsCompleted}
               onSubmitReview={handleSubmitReview}
+              onConfirmBooking={handleConfirmBooking}
+              onCancelBooking={handleCancelBooking}
+              onCancelClient={handleCancelClientRequest}
             />
           </TabsContent>
 

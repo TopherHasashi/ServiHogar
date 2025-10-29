@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { API_URL, apiPost } from "../lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -30,6 +31,7 @@ interface ServiceRequestProps {
 
 export default function ServiceRequest({ onBack, preSelectedService }: ServiceRequestProps) {
   const [currentStep, setCurrentStep] = useState(1)
+  const [availableSlots, setAvailableSlots] = useState<string[]>([])
   const [requestForm, setRequestForm] = useState({
     // Información del cliente
     firstName: "",
@@ -100,9 +102,61 @@ export default function ServiceRequest({ onBack, preSelectedService }: ServiceRe
     "14:00 - 16:00", "16:00 - 18:00", "18:00 - 20:00"
   ]
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Detect simple UUID format (for service id passed in)
+  const isUUID = useMemo(() => {
+    const s = preSelectedService || ""
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s)
+  }, [preSelectedService])
+
+  // When a real service id and a preferred date are present, fetch dynamic availability
+  useEffect(() => {
+    const run = async () => {
+      try {
+        if (!isUUID || !requestForm.preferredDate) {
+          setAvailableSlots([])
+          return
+        }
+  const res = await fetch(`${API_URL}/api/services/${preSelectedService}/availability/?start=${requestForm.preferredDate}&end=${requestForm.preferredDate}`)
+        if (!res.ok) {
+          setAvailableSlots([])
+          return
+        }
+        const data = await res.json()
+        const day = (data?.days || []).find((d: any) => d?.date === requestForm.preferredDate)
+        const slots = (day?.slots || []).map((s: any) => `${s.start} - ${s.end}`)
+        setAvailableSlots(slots)
+      } catch {
+        setAvailableSlots([])
+      }
+    }
+    run()
+  }, [isUUID, preSelectedService, requestForm.preferredDate])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Aquí se procesaría la solicitud
+    // Si hay un servicio real (UUID) y fecha/hora, intentamos crear la reserva en backend
+    try {
+      if (isUUID && preSelectedService && requestForm.preferredDate && requestForm.preferredTime) {
+        const start = (requestForm.preferredTime.split(" - ")[0] || "").trim()
+        const body = {
+          date: requestForm.preferredDate,
+          start,
+          titulo: `Reserva de ${services.find(s => s.id === requestForm.serviceType)?.name || 'Servicio'}`,
+          descripcion: requestForm.serviceDescription,
+          address: requestForm.address,
+          region: requestForm.region,
+          district: requestForm.district,
+        }
+        await apiPost(`/api/services/${preSelectedService}/book/`, body, { auth: true })
+        alert("¡Reserva creada exitosamente! Te contactaremos para coordinar.")
+        onBack()
+        return
+      }
+    } catch (err: any) {
+      alert(typeof err?.message === 'string' ? err.message : 'No se pudo crear la reserva. Intenta nuevamente.')
+      return
+    }
+    // Fallback legacy
     alert("¡Solicitud enviada exitosamente! Te contactaremos pronto.")
     onBack()
   }
@@ -383,7 +437,7 @@ export default function ServiceRequest({ onBack, preSelectedService }: ServiceRe
                           <SelectValue placeholder="Selecciona un horario" />
                         </SelectTrigger>
                         <SelectContent>
-                          {timeSlots.map((slot) => (
+                          {(availableSlots.length > 0 ? availableSlots : timeSlots).map((slot) => (
                             <SelectItem key={slot} value={slot}>
                               <div className="flex items-center gap-2">
                                 <Calendar className="w-4 h-4" />

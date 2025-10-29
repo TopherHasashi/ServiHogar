@@ -18,7 +18,7 @@ SET client_encoding = 'UTF8';
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
 -- Regiones de Chile (15 regiones)
-CREATE TABLE region (
+CREATE TABLE IF NOT EXISTS region (
     id_region UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nombre VARCHAR(100) NOT NULL UNIQUE,
     codigo VARCHAR(10) NOT NULL UNIQUE,
@@ -29,7 +29,7 @@ COMMENT ON TABLE region IS 'Regiones administrativas de Chile';
 COMMENT ON COLUMN region.codigo IS 'Código oficial de la región (I, II, III, ..., XV, RM)';
 
 -- Comunas por región
-CREATE TABLE comuna (
+CREATE TABLE IF NOT EXISTS comuna (
     id_comuna UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     id_region UUID NOT NULL REFERENCES region(id_region) ON DELETE CASCADE,
     nombre VARCHAR(100) NOT NULL,
@@ -225,7 +225,7 @@ ON CONFLICT (id_region, nombre) DO NOTHING;
 -- 3. CATEGORÍAS DE SERVICIOS
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE categoria_servicio (
+CREATE TABLE IF NOT EXISTS categoria_servicio (
     id_categoria_servicio UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nombre VARCHAR(50) NOT NULL UNIQUE,
     descripcion TEXT,
@@ -240,20 +240,20 @@ COMMENT ON TABLE categoria_servicio IS 'Categorías de servicios ofrecidos (Gasf
 -- 4. SISTEMA DE USUARIOS MULTI-ROL - RUT COMO PK
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE usuario (
+CREATE TABLE IF NOT EXISTS usuario (
     rut VARCHAR(12) PRIMARY KEY,
     nombres VARCHAR(100) NOT NULL,
     apellidos VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
     telefono VARCHAR(20) NOT NULL,
     genero VARCHAR(20) NOT NULL CHECK (genero IN ('masculino', 'femenino', 'no_binario')),
-    fecha_nacimiento DATE NOT NULL,
+    fecha_nacimiento TIMESTAMP NOT NULL,
     id_comuna UUID NOT NULL REFERENCES comuna(id_comuna),
     direccion TEXT NOT NULL,
     rol VARCHAR(20) NOT NULL DEFAULT 'cliente' CHECK (rol IN ('cliente', 'profesional', 'administrador', 'verificador')),
     
     -- CAMPOS OPCIONALES
-    foto_perfil_url TEXT,
+    foto_perfil BYTEA,
     
     -- VERIFICACIÓN DE CUENTA
     email_verificado BOOLEAN DEFAULT false,
@@ -274,7 +274,7 @@ COMMENT ON COLUMN usuario.id_comuna IS 'Comuna de residencia - región se obtien
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
 -- Servicios específicos por profesional (MÚLTIPLES - máximo 3)
-CREATE TABLE servicio_profesional (
+CREATE TABLE IF NOT EXISTS servicio_profesional (
     id_servicio_profesional UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     rut_usuario VARCHAR(12) NOT NULL REFERENCES usuario(rut) ON DELETE CASCADE,
     id_categoria_servicio UUID NOT NULL REFERENCES categoria_servicio(id_categoria_servicio),
@@ -319,11 +319,11 @@ COMMENT ON COLUMN servicio_profesional.precio_fijo IS 'Precio fijo del servicio,
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
 -- NIVEL 1: Horario base semanal
-CREATE TABLE horario_profesional (
+CREATE TABLE IF NOT EXISTS horario_profesional (
     id_horario_profesional UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     id_servicio_profesional UUID NOT NULL REFERENCES servicio_profesional(id_servicio_profesional) ON DELETE CASCADE,
     
-    dia_semana INTEGER NOT NULL CHECK (dia_semana >= 0 AND dia_semana <= 6), -- 0 = Domingo, 6 = Sábado
+    dia_semana INTEGER NOT NULL CHECK (dia_semana >= 0 AND dia_semana <= 6), -- 0 = Lunes, 6 = Domingo
     hora_inicio TIME NOT NULL,
     hora_fin TIME NOT NULL,
     
@@ -334,15 +334,15 @@ CREATE TABLE horario_profesional (
 );
 
 COMMENT ON TABLE horario_profesional IS 'Horario base semanal del profesional - Nivel 1';
-COMMENT ON COLUMN horario_profesional.dia_semana IS '0 = Domingo, 1 = Lunes, ..., 6 = Sábado';
+COMMENT ON COLUMN horario_profesional.dia_semana IS '0 = Lunes, 1 = Martes, 2 = Miércoles, 3 = Jueves, 4 = Viernes, 5 = Sábado, 6 = Domingo';
 
 -- NIVEL 2: Períodos personalizados (sobrescribe horario base)
-CREATE TABLE periodo_personalizado (
+CREATE TABLE IF NOT EXISTS periodo_personalizado (
     id_periodo_personalizado UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     id_servicio_profesional UUID NOT NULL REFERENCES servicio_profesional(id_servicio_profesional) ON DELETE CASCADE,
     
-    fecha_inicio DATE NOT NULL,
-    fecha_fin DATE NOT NULL,
+    fecha_inicio TIMESTAMP NOT NULL,
+    fecha_fin TIMESTAMP NOT NULL,
     hora_inicio TIME NOT NULL,
     hora_fin TIME NOT NULL,
     descripcion VARCHAR(200), -- "Vacaciones", "Evento especial", etc.
@@ -355,16 +355,17 @@ CREATE TABLE periodo_personalizado (
 COMMENT ON TABLE periodo_personalizado IS 'Períodos personalizados que sobrescriben horario base - Nivel 2';
 
 -- NIVEL 3: Días específicos bloqueados
-CREATE TABLE dia_bloqueado (
+CREATE TABLE IF NOT EXISTS dia_bloqueado (
     id_dia_bloqueado UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     id_servicio_profesional UUID NOT NULL REFERENCES servicio_profesional(id_servicio_profesional) ON DELETE CASCADE,
     
-    fecha DATE NOT NULL,
+    fecha_inicio TIMESTAMP NOT NULL,
+    fecha_fin TIMESTAMP NOT NULL,
     motivo TEXT,
     
     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    UNIQUE(id_servicio_profesional, fecha)
+    UNIQUE(id_servicio_profesional, fecha_inicio, fecha_fin)
 );
 
 COMMENT ON TABLE dia_bloqueado IS 'Días específicos bloqueados - Nivel 3';
@@ -373,17 +374,16 @@ COMMENT ON TABLE dia_bloqueado IS 'Días específicos bloqueados - Nivel 3';
 -- 7. DOCUMENTOS Y VERIFICACIÓN DIFERENCIADA
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE documento_profesional (
+CREATE TABLE IF NOT EXISTS documento_profesional (
     id_documento_profesional UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     rut_usuario VARCHAR(12) NOT NULL REFERENCES usuario(rut) ON DELETE CASCADE,
-    id_servicio_profesional UUID NOT NULL REFERENCES servicio_profesional(id_servicio_profesional) ON DELETE SET NULL,
+    id_servicio_profesional UUID REFERENCES servicio_profesional(id_servicio_profesional) ON DELETE SET NULL,
     
     -- TIPO DE DOCUMENTO
     tipo_documento VARCHAR(30) NOT NULL CHECK (tipo_documento IN (
         'certificado_antecedentes',
         'certificado_experiencia'
     )),
-    url_archivo TEXT NOT NULL,
     tipo_mime VARCHAR(100), -- application/pdf, image/jpeg, etc.
     
     -- ESTADO DE VERIFICACIÓN
@@ -404,7 +404,7 @@ COMMENT ON COLUMN documento_profesional.rut_verificador IS 'RUT del verificador 
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
 -- Cuentas bancarias de profesionales
-CREATE TABLE cuenta_bancaria_profesional (
+CREATE TABLE IF NOT EXISTS cuenta_bancaria_profesional (
     id_cuenta_bancaria_profesional UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     rut_usuario VARCHAR(12) NOT NULL REFERENCES usuario(rut) ON DELETE CASCADE,
     
@@ -416,6 +416,9 @@ CREATE TABLE cuenta_bancaria_profesional (
     nombre_titular VARCHAR(200) NOT NULL,
     email_contacto VARCHAR(255),
     
+    -- BANDERA DE CUENTA PRINCIPAL
+    es_principal BOOLEAN DEFAULT false,
+
     -- CONTROL DE PRIORIDADES (HASTA 3 CUENTAS)
     prioridad INTEGER NOT NULL CHECK (prioridad >= 1 AND prioridad <= 3),
     
@@ -434,12 +437,16 @@ COMMENT ON COLUMN cuenta_bancaria_profesional.rut_usuario IS 'RUT del profesiona
 COMMENT ON COLUMN cuenta_bancaria_profesional.prioridad IS '1 = Principal, 2 = Secundaria, 3 = Terciaria';
 
 -- En PostgreSQL, la unicidad condicional se implementa con un índice parcial
+-- Asegurar columna es_principal para el índice parcial
+ALTER TABLE cuenta_bancaria_profesional
+    ADD COLUMN IF NOT EXISTS es_principal BOOLEAN DEFAULT false;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_cuenta_principal_por_usuario
 ON cuenta_bancaria_profesional (rut_usuario)
 WHERE es_principal IS TRUE;
 
 -- Cuentas bancarias de ServiHogar (corporativas)
-CREATE TABLE cuenta_bancaria_servihogar (
+CREATE TABLE IF NOT EXISTS cuenta_bancaria_servihogar (
     id_cuenta_bancaria_servihogar UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     nombre_identificador VARCHAR(100) NOT NULL UNIQUE, -- "Cuenta Principal", "Respaldo 1", "Respaldo 2"
     -- INFORMACIÓN BANCARIA
@@ -466,7 +473,7 @@ COMMENT ON TABLE cuenta_bancaria_servihogar IS 'Cuentas bancarias corporativas d
 -- 9. SOLICITUDES DE SERVICIO
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE solicitud_servicio (
+CREATE TABLE IF NOT EXISTS solicitud_servicio (
     id_solicitud_servicio UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     rut_cliente VARCHAR(12) NOT NULL REFERENCES usuario(rut),
     rut_profesional VARCHAR(12) REFERENCES usuario(rut),
@@ -476,7 +483,7 @@ CREATE TABLE solicitud_servicio (
     descripcion TEXT NOT NULL,
     
     -- FECHA Y HORA
-    fecha_programada DATETIME NOT NULL,
+    fecha_programada TIMESTAMP NOT NULL,
     duracion_minutos INTEGER, -- Solo informativo
     
     -- UBICACIÓN DEL SERVICIO
@@ -517,7 +524,7 @@ COMMENT ON COLUMN solicitud_servicio.precio_total IS 'Precio fijo, no varía por
 -- 10. SISTEMA DE PAGOS CON MERCADOPAGO - ID MERCADOPAGO COMO PK
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE pago (
+CREATE TABLE IF NOT EXISTS pago (
     id_pago_mercadopago VARCHAR(100) PRIMARY KEY,
     id_solicitud_servicio UUID NOT NULL REFERENCES solicitud_servicio(id_solicitud_servicio),
     
@@ -558,99 +565,10 @@ COMMENT ON COLUMN pago.id_pago_mercadopago IS 'ID único de MercadoPago - CLAVE 
 COMMENT ON COLUMN pago.comision_plataforma IS 'Comisión del 5% para ServiHogar';
 
 -- ═══════════════════════════════════════════════════════════════════════════════════
--- 10.1. SISTEMA DE RETENCIÓN Y PAGOS A PROFESIONALES
--- ═══════════════════════════════════════════════════════════════════════════════════
-
--- Tabla: retencion_plataforma
--- Registra cada retención/comisión que ServiHogar toma de los pagos
-CREATE TABLE retencion_plataforma (
-    id_retencion UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
-    -- RELACIÓN CON PAGO ORIGINAL
-    id_pago_mercadopago VARCHAR(100) NOT NULL REFERENCES pago(id_pago_mercadopago),
-    id_solicitud_servicio UUID NOT NULL REFERENCES solicitud_servicio(id_solicitud_servicio),
-    
-    -- MONTOS
-    monto_total_pago INTEGER NOT NULL CHECK (monto_total_pago > 0), -- Monto total que pagó el cliente
-    porcentaje_retencion DECIMAL(5,2) NOT NULL DEFAULT 5.00 CHECK (porcentaje_retencion >= 0 AND porcentaje_retencion <= 100), -- % que retiene ServiHogar
-    monto_retenido INTEGER NOT NULL CHECK (monto_retenido >= 0), -- Monto que se queda ServiHogar
-    monto_profesional INTEGER NOT NULL CHECK (monto_profesional >= 0), -- Monto que le toca al profesional
-    
-    -- DESTINO DE LA RETENCIÓN
-    id_cuenta_destino_servihogar UUID REFERENCES cuenta_bancaria_servihogar(id_cuenta_bancaria_servihogar),
-    
-    -- TIMESTAMPS
-    retenido_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    -- VALIDACIÓN: monto_total = monto_retenido + monto_profesional
-    CONSTRAINT chk_suma_montos CHECK (monto_total_pago = monto_retenido + monto_profesional)
-);
-
-COMMENT ON TABLE retencion_plataforma IS 'Registro de retenciones/comisiones que ServiHogar toma de cada pago';
-COMMENT ON COLUMN retencion_plataforma.porcentaje_retencion IS 'Porcentaje que retiene ServiHogar (por defecto 5%)';
-COMMENT ON COLUMN retencion_plataforma.monto_retenido IS 'Monto en CLP que se queda ServiHogar';
-COMMENT ON COLUMN retencion_plataforma.monto_profesional IS 'Monto en CLP que le corresponde al profesional';
-
--- Tabla: pago_profesional
--- Gestiona los pagos que ServiHogar debe hacer a los profesionales
-CREATE TABLE pago_profesional (
-    id_pago_profesional UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    
-    -- RELACIONES
-    id_retencion UUID NOT NULL REFERENCES retencion_plataforma(id_retencion),
-    id_pago_mercadopago VARCHAR(100) NOT NULL REFERENCES pago(id_pago_mercadopago),
-    id_solicitud_servicio UUID NOT NULL REFERENCES solicitud_servicio(id_solicitud_servicio),
-    rut_profesional VARCHAR(12) NOT NULL REFERENCES usuario(rut),
-    
-    -- CUENTA BANCARIA DESTINO
-    id_cuenta_profesional UUID NOT NULL REFERENCES cuenta_bancaria_profesional(id_cuenta_bancaria_profesional),
-    
-    -- MONTOS
-    monto_a_pagar INTEGER NOT NULL CHECK (monto_a_pagar > 0), -- Monto que se le debe pagar al profesional
-    
-    -- ESTADO DEL PAGO AL PROFESIONAL
-    estado VARCHAR(20) DEFAULT 'pendiente' CHECK (estado IN (
-        'pendiente',        -- Servicio completado, pago pendiente de procesar
-        'en_proceso',       -- Pago en proceso de transferencia
-        'pagado',           -- Pago exitoso al profesional
-        'fallido',          -- Pago falló (problema bancario, cuenta inválida, etc.)
-        'revertido',        -- Pago revertido por disputa/reembolso
-        'retenido'          -- Pago retenido por incidencia/reclamo
-    )),
-    
-    -- INFORMACIÓN DE PROCESAMIENTO
-    metodo_pago VARCHAR(50) DEFAULT 'transferencia_bancaria', -- transferencia_bancaria, cuenta_vista, etc.
-    referencia_transaccion VARCHAR(100), -- Número de referencia/comprobante bancario
-    comprobante_url TEXT, -- URL del comprobante de pago (PDF/imagen)
-    
-    -- FECHAS
-    fecha_programada DATE, -- Fecha programada para el pago (ej: pagos semanales los viernes)
-    fecha_procesado TIMESTAMP, -- Fecha en que se procesó el pago
-    fecha_pagado TIMESTAMP, -- Fecha en que se confirmó el pago exitoso
-    
-    -- INFORMACIÓN ADICIONAL
-    motivo_fallo TEXT, -- Si el pago falló, descripción del motivo
-    notas TEXT, -- Notas internas sobre el pago
-    
-    -- AUDITORÍA
-    procesado_por VARCHAR(12) REFERENCES usuario(rut), -- RUT del admin que procesó el pago
-    
-    creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    actualizado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-COMMENT ON TABLE pago_profesional IS 'Pagos que ServiHogar debe hacer a los profesionales por servicios completados - V3.0';
-COMMENT ON COLUMN pago_profesional.rut_profesional IS 'RUT del profesional - FOREIGN KEY a usuario(rut)';
-COMMENT ON COLUMN pago_profesional.estado IS 'Estado del pago: pendiente → en_proceso → pagado/fallido';
-COMMENT ON COLUMN pago_profesional.fecha_programada IS 'Fecha programada para pago (ej: pagos semanales/mensuales)';
-COMMENT ON COLUMN pago_profesional.referencia_transaccion IS 'Número de referencia bancaria del pago';
-COMMENT ON COLUMN pago_profesional.procesado_por IS 'RUT del administrador - FOREIGN KEY a usuario(rut)';
-
--- ═══════════════════════════════════════════════════════════════════════════════════
 -- 11. RESEÑAS Y CALIFICACIONES
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE resena (
+CREATE TABLE IF NOT EXISTS resena (
     id_resena UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     id_solicitud_servicio UUID NOT NULL UNIQUE REFERENCES solicitud_servicio(id_solicitud_servicio),
     rut_evaluador VARCHAR(12) NOT NULL REFERENCES usuario(rut), -- Cliente que califica
@@ -679,7 +597,7 @@ COMMENT ON COLUMN resena.rut_evaluado IS 'RUT del profesional - FOREIGN KEY a us
 -- 12. MENSAJERÍA Y COMUNICACIÓN
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE notificacion (
+CREATE TABLE IF NOT EXISTS notificacion (
     id_notificacion UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     rut_usuario VARCHAR(12) NOT NULL REFERENCES usuario(rut),
     
@@ -697,14 +615,14 @@ CREATE TABLE notificacion (
     creado_en TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-COMMENT ON TABLE notificacion IS 'Notificaciones para usuarios;
+COMMENT ON TABLE notificacion IS 'Notificaciones para usuarios';
 COMMENT ON COLUMN notificacion.rut_usuario IS 'RUT del usuario - FOREIGN KEY a usuario(rut)';
 
 -- ═══════════════════════════════════════════════════════════════════════════════════
 -- 13. SISTEMA DE DISPUTAS
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
-CREATE TABLE disputa (
+CREATE TABLE IF NOT EXISTS disputa (
     id_disputa UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     id_solicitud_servicio UUID NOT NULL REFERENCES solicitud_servicio(id_solicitud_servicio),
     rut_reportante VARCHAR(12) NOT NULL REFERENCES usuario(rut),
@@ -721,7 +639,7 @@ CREATE TABLE disputa (
     )),
     
     descripcion TEXT NOT NULL,
-    evidencia_url TEXT, -- URLs de evidencias separadas por comas
+    evidencia BYTEA,
     
     -- ESTADO DE LA DISPUTA
     estado VARCHAR(20) DEFAULT 'abierta' CHECK (estado IN (
@@ -749,45 +667,33 @@ COMMENT ON COLUMN disputa.rut_resuelto_por IS 'RUT del admin - FOREIGN KEY a usu
 -- ═══════════════════════════════════════════════════════════════════════════════════
 
 -- Índices en usuario
-CREATE INDEX idx_usuario_email ON usuario(email);
-CREATE INDEX idx_usuario_comuna ON usuario(id_comuna);
-CREATE INDEX idx_usuario_rol ON usuario(rol);
+CREATE INDEX IF NOT EXISTS idx_usuario_email ON usuario(email);
+CREATE INDEX IF NOT EXISTS idx_usuario_comuna ON usuario(id_comuna);
+CREATE INDEX IF NOT EXISTS idx_usuario_rol ON usuario(rol);
 
 -- Índices en servicio_profesional
-CREATE INDEX idx_servicio_profesional_rut ON servicio_profesional(rut_usuario);
-CREATE INDEX idx_servicio_profesional_categoria ON servicio_profesional(id_categoria_servicio);
-CREATE INDEX idx_servicio_profesional_verificacion ON servicio_profesional(estado_verificacion);
+CREATE INDEX IF NOT EXISTS idx_servicio_profesional_rut ON servicio_profesional(rut_usuario);
+CREATE INDEX IF NOT EXISTS idx_servicio_profesional_categoria ON servicio_profesional(id_categoria_servicio);
+CREATE INDEX IF NOT EXISTS idx_servicio_profesional_verificacion ON servicio_profesional(estado_verificacion);
 
 -- Índices en solicitud_servicio
-CREATE INDEX idx_solicitud_servicio_cliente ON solicitud_servicio(rut_cliente);
-CREATE INDEX idx_solicitud_servicio_profesional ON solicitud_servicio(rut_profesional);
-CREATE INDEX idx_solicitud_servicio_estado ON solicitud_servicio(estado);
-CREATE INDEX idx_solicitud_servicio_fecha ON solicitud_servicio(fecha_programada);
+CREATE INDEX IF NOT EXISTS idx_solicitud_servicio_cliente ON solicitud_servicio(rut_cliente);
+CREATE INDEX IF NOT EXISTS idx_solicitud_servicio_profesional ON solicitud_servicio(rut_profesional);
+CREATE INDEX IF NOT EXISTS idx_solicitud_servicio_estado ON solicitud_servicio(estado);
+CREATE INDEX IF NOT EXISTS idx_solicitud_servicio_fecha ON solicitud_servicio(fecha_programada);
 
 -- Índices en pago
-CREATE INDEX idx_pago_solicitud ON pago(id_solicitud_servicio);
-CREATE INDEX idx_pago_estado ON pago(estado);
-
--- Índices en retencion_plataforma
-CREATE INDEX idx_retencion_pago ON retencion_plataforma(id_pago_mercadopago);
-CREATE INDEX idx_retencion_solicitud ON retencion_plataforma(id_solicitud_servicio);
-CREATE INDEX idx_retencion_fecha ON retencion_plataforma(retenido_en);
-
--- Índices en pago_profesional
-CREATE INDEX idx_pago_prof_profesional ON pago_profesional(rut_profesional);
-CREATE INDEX idx_pago_prof_estado ON pago_profesional(estado);
-CREATE INDEX idx_pago_prof_fecha_programada ON pago_profesional(fecha_programada);
-CREATE INDEX idx_pago_prof_fecha_pagado ON pago_profesional(fecha_pagado);
-CREATE INDEX idx_pago_prof_solicitud ON pago_profesional(id_solicitud_servicio);
+CREATE INDEX IF NOT EXISTS idx_pago_solicitud ON pago(id_solicitud_servicio);
+CREATE INDEX IF NOT EXISTS idx_pago_estado ON pago(estado);
 
 -- Índices en resena
-CREATE INDEX idx_resena_evaluador ON resena(rut_evaluador);
-CREATE INDEX idx_resena_evaluado ON resena(rut_evaluado);
-CREATE INDEX idx_resena_destacada ON resena(es_destacada);
+CREATE INDEX IF NOT EXISTS idx_resena_evaluador ON resena(rut_evaluador);
+CREATE INDEX IF NOT EXISTS idx_resena_evaluado ON resena(rut_evaluado);
+CREATE INDEX IF NOT EXISTS idx_resena_destacada ON resena(es_destacada);
 
 -- Índices en notificacion
-CREATE INDEX idx_notificacion_usuario ON notificacion(rut_usuario);
-CREATE INDEX idx_notificacion_tipo ON notificacion(tipo);
+CREATE INDEX IF NOT EXISTS idx_notificacion_usuario ON notificacion(rut_usuario);
+CREATE INDEX IF NOT EXISTS idx_notificacion_tipo ON notificacion(tipo);
 
 -- ═══════════════════════════════════════════════════════════════════════════════════
 -- 15. FUNCIONES Y TRIGGERS
@@ -803,17 +709,41 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Triggers para actualizar_en
-CREATE TRIGGER trigger_actualizar_usuario
-    BEFORE UPDATE ON usuario
-    FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger WHERE tgname = 'trigger_actualizar_usuario'
+    ) THEN
+        CREATE TRIGGER trigger_actualizar_usuario
+            BEFORE UPDATE ON usuario
+            FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
+    END IF;
+END;
+$$;
 
-CREATE TRIGGER trigger_actualizar_servicio_profesional
-    BEFORE UPDATE ON servicio_profesional
-    FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger WHERE tgname = 'trigger_actualizar_servicio_profesional'
+    ) THEN
+        CREATE TRIGGER trigger_actualizar_servicio_profesional
+            BEFORE UPDATE ON servicio_profesional
+            FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
+    END IF;
+END;
+$$;
 
-CREATE TRIGGER trigger_actualizar_solicitud_servicio
-    BEFORE UPDATE ON solicitud_servicio
-    FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger WHERE tgname = 'trigger_actualizar_solicitud_servicio'
+    ) THEN
+        CREATE TRIGGER trigger_actualizar_solicitud_servicio
+            BEFORE UPDATE ON solicitud_servicio
+            FOR EACH ROW EXECUTE FUNCTION actualizar_timestamp();
+    END IF;
+END;
+$$;
 
 -- Función para validar RUT chileno
 CREATE OR REPLACE FUNCTION validar_rut_chileno(rut VARCHAR)
@@ -880,6 +810,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trigger_validar_max_servicios
-    BEFORE INSERT ON servicio_profesional
-    FOR EACH ROW EXECUTE FUNCTION validar_max_servicios_profesional();
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger WHERE tgname = 'trigger_validar_max_servicios'
+    ) THEN
+        CREATE TRIGGER trigger_validar_max_servicios
+            BEFORE INSERT ON servicio_profesional
+            FOR EACH ROW EXECUTE FUNCTION validar_max_servicios_profesional();
+    END IF;
+END;
+$$;

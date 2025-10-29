@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from "react"
+import { useState, useEffect } from "react"
+import { API_URL, apiPost } from "../../lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -119,64 +120,69 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
     sunday: { enabled: false, timeSlots: [] }
   })
 
-  // Simulación de disponibilidad - en producción vendría del backend
-  const getAvailableSlots = (date: Date): TimeSlot[] => {
-    const dayOfWeek = date.getDay()
-    const dayNames: (keyof WeeklySchedule)[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
-    const dayName = dayNames[dayOfWeek]
-    
-    // Usar horario del profesional o uno por defecto
-    const schedule = professional.weeklySchedule || getDefaultWeeklySchedule()
-    
-    if (!schedule[dayName]?.enabled) {
-      return []
-    }
-    
-    const daySchedule = schedule[dayName]
-    const slots: TimeSlot[] = []
-    
-    // Generar slots basados en los horarios configurados
-    daySchedule.timeSlots.forEach(timeSlot => {
-      const startHour = parseInt(timeSlot.start.split(':')[0])
-      const startMinute = parseInt(timeSlot.start.split(':')[1])
-      const endHour = parseInt(timeSlot.end.split(':')[0])
-      const endMinute = parseInt(timeSlot.end.split(':')[1])
-      
-      const startMinutes = startHour * 60 + startMinute
-      const endMinutes = endHour * 60 + endMinute
-      
-      // Crear slots de 1 hora dentro del rango horario
-      for (let time = startMinutes; time < endMinutes; time += 60) {
-        const slotHour = Math.floor(time / 60)
-        const slotMinute = time % 60
-        const nextHour = Math.floor((time + 60) / 60)
-        const nextMinute = (time + 60) % 60
-        
-        const slotStart = `${slotHour.toString().padStart(2, '0')}:${slotMinute.toString().padStart(2, '0')}`
-        const slotEnd = `${nextHour.toString().padStart(2, '0')}:${nextMinute.toString().padStart(2, '0')}`
-        
-        // Generar disponibilidad consistente basada en profesional, fecha y hora
-        const seed = `${professional.id}-${date.toDateString()}-${slotStart}`
-        let hash = 0
-        for (let i = 0; i < seed.length; i++) {
-          const char = seed.charCodeAt(i)
-          hash = ((hash << 5) - hash) + char
-          hash = hash & hash // Convert to 32bit integer
+  // Cargar plantilla semanal real del servicio para la sección "Horarios de Trabajo"
+  const [weeklyTemplate, setWeeklyTemplate] = useState<WeeklySchedule | null>(null)
+  useEffect(() => {
+    const loadWeekly = async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/services/${professional.id}/weekly-template/`)
+        if (!res.ok) return
+        const data = await res.json()
+        // Validar forma mínima
+        if (data && typeof data === 'object') {
+          setWeeklyTemplate(data as WeeklySchedule)
         }
-        // Usar el hash para determinar disponibilidad (aproximadamente 70% disponible)
-        const available = Math.abs(hash) % 10 < 7
-        
-        slots.push({
-          start: slotStart,
-          end: slotEnd,
-          available,
-          price: calculatePrice(selectedDuration)
-        })
+      } catch {
+        // ignore
       }
-    })
-    
-    return slots
-  }
+    }
+    loadWeekly()
+  }, [professional.id])
+
+  // Disponibilidad REAL desde backend
+  const [daySlots, setDaySlots] = useState<TimeSlot[]>([])
+  useEffect(() => {
+    const fetchDay = async () => {
+      setDaySlots([])
+      if (!selectedDate) return
+      try {
+        const iso = selectedDate.toISOString().split('T')[0]
+        const res = await fetch(`${API_URL}/api/services/${professional.id}/availability/?start=${iso}&end=${iso}`)
+        if (!res.ok) return
+        const data = await res.json()
+        const day = (data?.days || []).find((d: any) => d?.date === iso)
+        if (!day) return
+        const availSet = new Set((day.slots || []).map((s: any) => `${s.start}-${s.end}`))
+        const slotMinutes = Number(data?.slot_minutes || 60)
+        const stepMinutes = Number(data?.step_minutes || slotMinutes)
+        const result: TimeSlot[] = []
+        for (const intv of (day.template || [])) {
+          const [sh, sm] = String(intv.start).split(':').map((x: string) => parseInt(x, 10))
+          const [eh, em] = String(intv.end).split(':').map((x: string) => parseInt(x, 10))
+          const startTotal = sh * 60 + sm
+          const endTotal = eh * 60 + em
+          for (let t = startTotal; t + slotMinutes <= endTotal; t += stepMinutes) {
+            const h1 = Math.floor(t / 60).toString().padStart(2, '0')
+            const m1 = (t % 60).toString().padStart(2, '0')
+            const t2 = t + slotMinutes
+            const h2 = Math.floor(t2 / 60).toString().padStart(2, '0')
+            const m2 = (t2 % 60).toString().padStart(2, '0')
+            const key = `${h1}:${m1}-${h2}:${m2}`
+            result.push({
+              start: `${h1}:${m1}`,
+              end: `${h2}:${m2}`,
+              available: availSet.has(key),
+              price: calculatePrice(selectedDuration)
+            })
+          }
+        }
+        setDaySlots(result)
+      } catch {
+        // ignore
+      }
+    }
+    fetchDay()
+  }, [selectedDate, professional.id, selectedDuration])
 
   const calculatePrice = (_duration: number): number => {
     // Ahora los precios son siempre fijos, independiente de la duración
@@ -278,7 +284,24 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
     }
   }
 
-  const handlePaymentSuccess = () => {
+  const handlePaymentSuccess = async () => {
+    // Persistir reserva en backend (requiere usuario autenticado)
+    try {
+      const isoDate = selectedDate?.toISOString().split('T')[0]
+      const start = selectedTimeSlot?.start
+      if (!isoDate || !start) throw new Error('Faltan fecha u hora')
+      await apiPost(`/api/services/${professional.id}/book/`, {
+        date: isoDate,
+        start,
+        titulo: `Reserva de ${professional.service}`,
+        descripcion: serviceDetails.description || `Reserva con ${professional.name}`,
+        address: serviceDetails.address || '',
+      }, { auth: true })
+    } catch (err) {
+      console.error('Error al guardar la reserva:', err)
+      // Podemos mostrar un aviso o permitir reintento en el futuro
+    }
+
     const booking = {
       id: `BOOK-${Date.now()}`,
       professional: professional.name,
@@ -302,9 +325,7 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
   }
 
   // Usar useMemo para evitar re-generación innecesaria de slots
-  const availableSlots = useMemo(() => {
-    return selectedDate ? getAvailableSlots(selectedDate) : []
-  }, [selectedDate, selectedDuration, professional.id])
+  const availableSlots = daySlots
   const currentPrice = calculatePrice(selectedDuration)
 
   // Simulación de reseñas del profesional - en producción vendría del backend
@@ -1046,7 +1067,7 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
               <CardContent>
                 <div className="space-y-2 text-sm">
                   {(() => {
-                    const schedule = professional.weeklySchedule || getDefaultWeeklySchedule()
+                    const schedule = weeklyTemplate || professional.weeklySchedule || getDefaultWeeklySchedule()
                     const dayLabels = {
                       monday: 'Lunes',
                       tuesday: 'Martes', 
