@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react"
-import { apiGetAuth, apiPutAuth } from "../../lib/api"
+import { apiGetAuth, apiPutAuth, apiPost } from "../../lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -445,7 +445,7 @@ export default function ProfessionalScheduleManagerAdvanced({
   }
 
   // Aplicar disponibilidad personalizada
-  const applyCustomAvailability = () => {
+  const applyCustomAvailability = async () => {
     if (!selectedService || selectedDates.length === 0) return
 
     // Validación: no permitir marcar días pasados
@@ -460,7 +460,7 @@ export default function ProfessionalScheduleManagerAdvanced({
     }
 
     // Construir rangos contiguos (evita bloquear días no seleccionados en medio)
-    const ranges: Array<{start: Date; end: Date}> = []
+  const ranges: Array<{start: Date; end: Date}> = []
     let start = new Date(normalized[0])
     let end = new Date(normalized[0])
     const isNextDay = (a: Date, b: Date) => {
@@ -478,6 +478,31 @@ export default function ProfessionalScheduleManagerAdvanced({
     }
     ranges.push({ start, end })
 
+    // Pre-chequeo de reservas en estos rangos antes de aplicar en UI
+    try {
+      const body = {
+        ranges: ranges.map(r => ({
+          start_date: r.start.toISOString().slice(0,10),
+          end_date: r.end.toISOString().slice(0,10),
+        }))
+      }
+      const res = await apiPost(`/api/schedule/${selectedService}/block-conflicts/?detail=true`, body, { auth: true })
+      const conflicts = Array.isArray(res?.conflicts) ? res.conflicts as Array<{date: string; count: number; reservations?: Array<{start: string; end: string; client: string}>}> : []
+      const total = Number(res?.total || 0)
+      if (total > 0) {
+        const list = conflicts.map(c => {
+          const head = `${new Date(c.date).toLocaleDateString()} (${c.count})`
+          const det = (c.reservations || []).slice(0,3).map(r => `${r.start}-${r.end}${r.client ? ' ' + r.client : ''}`).join('; ')
+          return det ? `${head}: ${det}` : head
+        }).join(', ')
+        const proceed = window.confirm(`Tienes reservas en: ${list}.\n¿Seguro que quieres marcar estos días como no disponibles?`)
+        if (!proceed) return
+      }
+    } catch (e) {
+      // Si el pre-check falla por red/permiso, seguimos sin bloquear la acción del usuario; el guardado validará igual
+      console.warn('Pre-check de reservas falló, continuando...', e)
+    }
+
     const additions: CustomAvailability[] = ranges.map((r, idx) => ({
       id: `${Date.now()}-${idx}`,
       type: 'unavailable',
@@ -487,11 +512,62 @@ export default function ProfessionalScheduleManagerAdvanced({
       timeSlots: undefined,
     }))
 
+    // Unificar rangos contiguos o solapados con el mismo motivo (reason)
+    const coalesceUnavailable = (items: CustomAvailability[]) => {
+      const startOfDay = (d: Date) => { const x = new Date(d); x.setHours(0,0,0,0); return x }
+      const addDays = (d: Date, n: number) => { const x = new Date(d); x.setDate(x.getDate() + n); x.setHours(0,0,0,0); return x }
+      const normalizeReason = (r: string) => {
+        // Normaliza motivo: trim, minúsculas, sin acentos, espacios múltiples -> uno
+        const noAccents = r.normalize('NFD').replace(/\p{Diacritic}+/gu, '')
+        return noAccents.trim().toLowerCase().replace(/\s+/g, ' ')
+      }
+
+      // Solo procesamos type==='unavailable'. Agrupar por reason exacto (incluyendo undefined/"")
+      const groups = new Map<string, CustomAvailability[]>()
+      const keyOf = (a: CustomAvailability) => `unavailable|${normalizeReason(String(a.reason ?? ''))}`
+      for (const a of items) {
+        if (a.type !== 'unavailable') continue
+        const k = keyOf(a)
+        if (!groups.has(k)) groups.set(k, [])
+        groups.get(k)!.push({ ...a, startDate: startOfDay(a.startDate), endDate: startOfDay(a.endDate) })
+      }
+
+      const merged: CustomAvailability[] = []
+  for (const arr of groups.values()) {
+        arr.sort((a,b) => a.startDate.getTime() - b.startDate.getTime() || a.endDate.getTime() - b.endDate.getTime())
+        let current: CustomAvailability | null = null
+        for (const item of arr) {
+          if (!current) { current = { ...item } ; continue }
+          // Si se solapan o son adyacentes (end + 1 día >= next.start) -> unir
+          const nextStart = item.startDate
+          const currentEndPlus1 = addDays(current.endDate, 1)
+          if (currentEndPlus1.getTime() >= nextStart.getTime()) {
+            // extender fin al máximo
+            if (item.endDate.getTime() > current.endDate.getTime()) {
+              current.endDate = new Date(item.endDate)
+            }
+          } else {
+            // cerrar actual y empezar nuevo
+            merged.push({ ...current, id: `merge-${Date.now()}-${merged.length}` })
+            current = { ...item }
+          }
+        }
+        if (current) merged.push({ ...current, id: `merge-${Date.now()}-${merged.length}` })
+      }
+
+      // Si existieran tipos distintos a unavailable, los dejamos tal cual (no usados hoy)
+      // itemsNotUnavailable = [] porque en este flujo sólo agregamos unavailable.
+      return merged
+    }
+
     setServiceSchedules(prev => ({
       ...prev,
       [selectedService]: {
         ...prev[selectedService],
-        customAvailability: [...prev[selectedService].customAvailability, ...additions]
+        customAvailability: coalesceUnavailable([
+          ...prev[selectedService].customAvailability,
+          ...additions,
+        ])
       }
     }))
 
@@ -499,7 +575,7 @@ export default function ProfessionalScheduleManagerAdvanced({
     setCustomReason("")
   }
 
-  // Eliminar disponibilidad personalizada
+  // Eliminar disponibilidad personalizada (por id desde la lista)
   const removeCustomAvailability = (serviceId: string, availabilityId: string) => {
     setServiceSchedules(prev => ({
       ...prev,
@@ -510,6 +586,80 @@ export default function ProfessionalScheduleManagerAdvanced({
         )
       }
     }))
+  }
+
+  // Quitar un único día de un rango bloqueado (clic directo en el calendario)
+  const removeBlockedDayFromCalendar = (serviceId: string, date: Date) => {
+    setServiceSchedules(prev => {
+      const sched = prev[serviceId]
+      if (!sched) return prev
+      const d = new Date(date); d.setHours(0,0,0,0)
+      const idx = sched.customAvailability.findIndex(a => 
+        a.type === 'unavailable' && d.getTime() >= new Date(a.startDate).setHours(0,0,0,0) && d.getTime() <= new Date(a.endDate).setHours(0,0,0,0)
+      )
+      if (idx === -1) return prev
+
+      const target = sched.customAvailability[idx]
+      const start = new Date(target.startDate); start.setHours(0,0,0,0)
+      const end = new Date(target.endDate); end.setHours(0,0,0,0)
+
+      const dayBefore = new Date(d); dayBefore.setDate(dayBefore.getDate() - 1)
+      const dayAfter = new Date(d); dayAfter.setDate(dayAfter.getDate() + 1)
+
+      const newEntries: CustomAvailability[] = []
+      // Caso 1: rango de un solo día -> eliminar entero
+      if (start.getTime() === end.getTime() && start.getTime() === d.getTime()) {
+        // no newEntries
+      } else if (d.getTime() === start.getTime()) {
+        // Caso 2: remover primer día -> mover start a día siguiente
+        if (dayAfter.getTime() <= end.getTime()) {
+          newEntries.push({
+            ...target,
+            id: `${target.id}-a`,
+            startDate: dayAfter,
+            endDate: new Date(end),
+          })
+        }
+      } else if (d.getTime() === end.getTime()) {
+        // Caso 3: remover último día -> mover end a día anterior
+        if (start.getTime() <= dayBefore.getTime()) {
+          newEntries.push({
+            ...target,
+            id: `${target.id}-b`,
+            startDate: new Date(start),
+            endDate: dayBefore,
+          })
+        }
+      } else {
+        // Caso 4: remover día intermedio -> dividir en dos rangos
+        newEntries.push({
+          ...target,
+          id: `${target.id}-l`,
+          startDate: new Date(start),
+          endDate: dayBefore,
+        })
+        newEntries.push({
+          ...target,
+          id: `${target.id}-r`,
+          startDate: dayAfter,
+          endDate: new Date(end),
+        })
+      }
+
+      const nextList = [
+        ...sched.customAvailability.slice(0, idx),
+        ...newEntries,
+        ...sched.customAvailability.slice(idx + 1)
+      ]
+
+      return {
+        ...prev,
+        [serviceId]: {
+          ...sched,
+          customAvailability: nextList,
+        }
+      }
+    })
   }
 
   // Funciones para horario semanal
@@ -780,7 +930,30 @@ export default function ProfessionalScheduleManagerAdvanced({
           weekly_template: p.weeklySchedule,
         })),
       }
-      await apiPutAuth(`/api/schedule/${selectedService}/`, payload)
+      try {
+        await apiPutAuth(`/api/schedule/${selectedService}/`, payload)
+      } catch (err: any) {
+        // Intentar detectar conflictos de reservas devueltos por el backend (HTTP 409)
+        let msg = String(err?.message || '')
+        let parsed: any = null
+        if (msg && msg.trim().startsWith('{')) {
+          try { parsed = JSON.parse(msg) } catch { /* ignore */ }
+        }
+        const conflicts = parsed?.conflicts as Array<{ date: string; count: number }>
+        if (Array.isArray(conflicts) && conflicts.length > 0) {
+          const list = conflicts.map(c => `${new Date(c.date).toLocaleDateString()} (${c.count})`).join(', ')
+          const ok = window.confirm(`Tienes reservas en: ${list}.\n¿Seguro que quieres bloquear esos días igualmente?`)
+          if (!ok) {
+            setIsSaving(false)
+            return
+          }
+          // Reintentar con 'force'
+          const forced = { ...payload, force: true }
+          await apiPutAuth(`/api/schedule/${selectedService}/`, forced)
+        } else {
+          throw err
+        }
+      }
       setIsSaving(false)
       setSaveSuccess(true)
       setTimeout(() => setSaveSuccess(false), 3000)
@@ -987,7 +1160,8 @@ export default function ProfessionalScheduleManagerAdvanced({
                         const isToday = day.date.toDateString() === new Date().toDateString()
                         const isStartOfWeek = day.date.getDay() === 1 // Lunes
                         const currentWeekSelected = isStartOfWeek && isWeekSelected(day.date)
-                        const disabled = !day.isCurrentMonth || (selectedService ? isBlocked(day.date, selectedService) : false)
+                        const blocked = selectedService ? isBlocked(day.date, selectedService) : false
+                        const disabled = !day.isCurrentMonth
                         
                         return (
                           <div key={index} className="relative min-h-[40px]">
@@ -1007,7 +1181,14 @@ export default function ProfessionalScheduleManagerAdvanced({
                             )}
                             
                             <button
-                              onClick={() => !disabled && handleDateSelect(day.date)}
+                              onClick={() => {
+                                if (disabled) return
+                                if (blocked && selectedService) {
+                                  removeBlockedDayFromCalendar(selectedService, day.date)
+                                } else {
+                                  handleDateSelect(day.date)
+                                }
+                              }}
                               disabled={disabled}
                               className={`
                                 w-full h-10 text-sm rounded-md border transition-colors relative
@@ -1017,7 +1198,9 @@ export default function ProfessionalScheduleManagerAdvanced({
                                 ${customAvailability?.type === 'unavailable' ? 'bg-red-100 text-red-700 border-red-200' : ''}
                                 ${currentWeekSelected && !isSelected ? 'ring-1 ring-red-200' : ''}
                               `}
-                              title={disabled && customAvailability?.type === 'unavailable' ? 'Día ya bloqueado' : undefined}
+                              title={
+                                disabled ? undefined : (blocked ? 'Click para desbloquear este día' : undefined)
+                              }
                             >
                               {day.date.getDate()}
                               {customAvailability && (
