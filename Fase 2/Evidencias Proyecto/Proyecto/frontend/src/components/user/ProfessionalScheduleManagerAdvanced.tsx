@@ -100,7 +100,8 @@ export default function ProfessionalScheduleManagerAdvanced({
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [selectedService, setSelectedService] = useState<string>("")
   const [selectedDates, setSelectedDates] = useState<Date[]>([])
-  const [availabilityType, _setAvailabilityType] = useState<'available' | 'unavailable'>('unavailable')
+  // Siempre bloqueamos días completos por ahora (unavailable)
+  // No se usa de momento, siempre bloqueamos días completos (unavailable)
   const [customReason, setCustomReason] = useState("")
   const [viewMode, setViewMode] = useState<'calendar' | 'weekly' | 'custom-periods'>('calendar')
   const [isSaving, setIsSaving] = useState(false)
@@ -304,8 +305,16 @@ export default function ProfessionalScheduleManagerAdvanced({
     })
   }
 
+  // Día ya bloqueado (no disponible) por el profesional
+  const isBlocked = (date: Date, serviceId: string) => {
+    const ca = getCustomAvailabilityForDate(date, serviceId)
+    return !!(ca && ca.type === 'unavailable')
+  }
+
   // Manejar selección de fechas
   const handleDateSelect = (date: Date) => {
+    // Evitar seleccionar un día ya bloqueado
+    if (selectedService && isBlocked(date, selectedService)) return
     setSelectedDates(prev => {
       const isSelected = prev.some(selected => 
         selected.toDateString() === date.toDateString()
@@ -335,7 +344,7 @@ export default function ProfessionalScheduleManagerAdvanced({
       // Solo agregar fechas del mes actual que sean visibles
       const isCurrentMonth = date.getMonth() === currentMonth.getMonth() && 
                             date.getFullYear() === currentMonth.getFullYear()
-      if (isCurrentMonth) {
+      if (isCurrentMonth && (!selectedService || !isBlocked(date, selectedService))) {
         weekDates.push(date)
       }
     }
@@ -369,7 +378,10 @@ export default function ProfessionalScheduleManagerAdvanced({
     const daysInMonth = new Date(year, month + 1, 0).getDate()
     
     for (let day = 1; day <= daysInMonth; day++) {
-      monthDates.push(new Date(year, month, day))
+      const d = new Date(year, month, day)
+      if (!selectedService || !isBlocked(d, selectedService)) {
+        monthDates.push(d)
+      }
     }
     
     setSelectedDates(prev => {
@@ -436,20 +448,50 @@ export default function ProfessionalScheduleManagerAdvanced({
   const applyCustomAvailability = () => {
     if (!selectedService || selectedDates.length === 0) return
 
-    const newAvailability: CustomAvailability = {
-      id: Date.now().toString(),
-      type: availabilityType,
-      startDate: new Date(Math.min(...selectedDates.map(d => d.getTime()))),
-      endDate: new Date(Math.max(...selectedDates.map(d => d.getTime()))),
-      reason: customReason || undefined,
-      timeSlots: undefined // Solo marcamos cuando NO están disponibles
+    // Validación: no permitir marcar días pasados
+    const today = new Date(); today.setHours(0,0,0,0)
+    const normalized = selectedDates
+      .map(d => { const dd = new Date(d); dd.setHours(0,0,0,0); return dd })
+      .filter(dd => dd >= today && !isBlocked(dd, selectedService))
+      .sort((a,b) => a.getTime() - b.getTime())
+    if (normalized.length === 0) {
+      alert('No puedes bloquear días en el pasado ni volver a bloquear días ya bloqueados')
+      return
     }
+
+    // Construir rangos contiguos (evita bloquear días no seleccionados en medio)
+    const ranges: Array<{start: Date; end: Date}> = []
+    let start = new Date(normalized[0])
+    let end = new Date(normalized[0])
+    const isNextDay = (a: Date, b: Date) => {
+      const na = new Date(a); na.setDate(na.getDate() + 1); return na.getTime() === b.getTime()
+    }
+    for (let i = 1; i < normalized.length; i++) {
+      const d = normalized[i]
+      if (isNextDay(end, d)) {
+        end = new Date(d)
+      } else {
+        ranges.push({ start, end })
+        start = new Date(d)
+        end = new Date(d)
+      }
+    }
+    ranges.push({ start, end })
+
+    const additions: CustomAvailability[] = ranges.map((r, idx) => ({
+      id: `${Date.now()}-${idx}`,
+      type: 'unavailable',
+      startDate: r.start,
+      endDate: r.end,
+      reason: customReason || undefined,
+      timeSlots: undefined,
+    }))
 
     setServiceSchedules(prev => ({
       ...prev,
       [selectedService]: {
         ...prev[selectedService],
-        customAvailability: [...prev[selectedService].customAvailability, newAvailability]
+        customAvailability: [...prev[selectedService].customAvailability, ...additions]
       }
     }))
 
@@ -714,6 +756,16 @@ export default function ProfessionalScheduleManagerAdvanced({
     try {
       if (!selectedService) return
       const sched = serviceSchedules[selectedService]
+      // Validación previa: asegurar que los bloques no empiecen en pasado
+      const today = new Date(); today.setHours(0,0,0,0)
+      for (const a of sched.customAvailability) {
+        const sd = new Date(a.startDate); sd.setHours(0,0,0,0)
+        if (sd < today) {
+          setIsSaving(false)
+          alert('Hay días no disponibles en el pasado. Ajusta las fechas antes de guardar.')
+          return
+        }
+      }
       const payload = {
         weekly_template: sched.weeklyTemplate,
         unavailabilities: sched.customAvailability.map(a => ({
@@ -935,6 +987,7 @@ export default function ProfessionalScheduleManagerAdvanced({
                         const isToday = day.date.toDateString() === new Date().toDateString()
                         const isStartOfWeek = day.date.getDay() === 1 // Lunes
                         const currentWeekSelected = isStartOfWeek && isWeekSelected(day.date)
+                        const disabled = !day.isCurrentMonth || (selectedService ? isBlocked(day.date, selectedService) : false)
                         
                         return (
                           <div key={index} className="relative min-h-[40px]">
@@ -954,16 +1007,17 @@ export default function ProfessionalScheduleManagerAdvanced({
                             )}
                             
                             <button
-                              onClick={() => day.isCurrentMonth && handleDateSelect(day.date)}
-                              disabled={!day.isCurrentMonth}
+                              onClick={() => !disabled && handleDateSelect(day.date)}
+                              disabled={disabled}
                               className={`
                                 w-full h-10 text-sm rounded-md border transition-colors relative
-                                ${!day.isCurrentMonth ? 'text-gray-300 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50'}
+                                ${disabled ? 'text-gray-300 cursor-not-allowed' : 'cursor-pointer hover:bg-gray-50'}
                                 ${isSelected ? 'bg-blue-500 text-white border-blue-500' : ''}
                                 ${isToday && !isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'}
                                 ${customAvailability?.type === 'unavailable' ? 'bg-red-100 text-red-700 border-red-200' : ''}
                                 ${currentWeekSelected && !isSelected ? 'ring-1 ring-red-200' : ''}
                               `}
+                              title={disabled && customAvailability?.type === 'unavailable' ? 'Día ya bloqueado' : undefined}
                             >
                               {day.date.getDate()}
                               {customAvailability && (

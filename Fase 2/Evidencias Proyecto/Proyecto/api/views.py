@@ -1397,6 +1397,10 @@ def schedule_detail(request, service_id: str):
 					return Response({"message": "Fecha inválida en unavailabilities"}, status=status.HTTP_400_BAD_REQUEST)
 				if ed_dt < sd_dt:
 					return Response({"message": "Rango de fechas inválido en unavailability"}, status=status.HTTP_400_BAD_REQUEST)
+				# Validación adicional: no permitir bloquear días pasados
+				today = timezone.now().date()
+				if sd_dt.date() < today:
+					return Response({"message": "No puedes bloquear días en el pasado"}, status=status.HTTP_400_BAD_REQUEST)
 				reason = ((item or {}).get('reason') or '')[:255]
 				cur.execute(
 					"""
