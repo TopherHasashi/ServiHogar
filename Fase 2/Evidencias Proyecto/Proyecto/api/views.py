@@ -1386,9 +1386,24 @@ def schedule_detail(request, service_id: str):
 								[str(uuid.uuid4()), service_id, int(idx), st, en],
 							)
 
-		# Reemplazar días bloqueados (usar rangos fecha_inicio/fecha_fin)
+		# Reemplazar días bloqueados (usar rangos fecha_inicio/fecha_fin) con fusión por motivo normalizado
 		with connection.cursor() as cur:
 			cur.execute("DELETE FROM dia_bloqueado WHERE id_servicio_profesional = %s", [service_id])
+
+			def _normalize_reason(r: str) -> str:
+				import unicodedata
+				r = (r or '').strip()
+				try:
+					# Quitar acentos
+					r_norm = unicodedata.normalize('NFD', r)
+					r_no_accents = ''.join(ch for ch in r_norm if not unicodedata.category(ch).startswith('M'))
+				except Exception:
+					r_no_accents = r
+				return ' '.join(r_no_accents.split()).lower()
+
+			# 1) Parsear y validar items entrantes
+			parsed: list[dict] = []
+			today = timezone.now().date()
 			for item in unavailabilities:
 				try:
 					sd_dt = datetime.fromisoformat((item or {}).get('start_date', ''))
@@ -1397,14 +1412,89 @@ def schedule_detail(request, service_id: str):
 					return Response({"message": "Fecha inválida en unavailabilities"}, status=status.HTTP_400_BAD_REQUEST)
 				if ed_dt < sd_dt:
 					return Response({"message": "Rango de fechas inválido en unavailability"}, status=status.HTTP_400_BAD_REQUEST)
-				reason = ((item or {}).get('reason') or '')[:255]
+				if sd_dt.date() < today:
+					return Response({"message": "No puedes bloquear días en el pasado"}, status=status.HTTP_400_BAD_REQUEST)
+				reason_raw = ((item or {}).get('reason') or '')[:255]
+				parsed.append({
+					'start': sd_dt.date(),
+					'end': ed_dt.date(),
+					'reason': reason_raw,
+					'key': _normalize_reason(reason_raw),
+				})
+
+			# 2) Agrupar por motivo normalizado y fusionar rangos adyacentes/solapados
+			from collections import defaultdict
+			groups: dict[str, list[dict]] = defaultdict(list)
+			for it in parsed:
+				groups[it['key']].append(it)
+
+			def _coalesce(items: list[dict]) -> tuple[list[tuple], str]:
+				if not items:
+					return ([], '')
+				# Usar el primer motivo no vacío como representativo
+				representative_reason = next((i['reason'] for i in items if i['reason']), items[0]['reason'])
+				items = sorted(items, key=lambda x: (x['start'], x['end']))
+				merged: list[tuple] = []  # (start_date, end_date)
+				cur_s, cur_e = items[0]['start'], items[0]['end']
+				for it in items[1:]:
+					st, en = it['start'], it['end']
+					# adyacente/solapado: cur_e + 1 día >= st
+					if (cur_e + timedelta(days=1)) >= st:
+						if en > cur_e:
+							cur_e = en
+					else:
+						merged.append((cur_s, cur_e))
+						cur_s, cur_e = st, en
+				merged.append((cur_s, cur_e))
+				return (merged, representative_reason)
+
+			to_insert: list[tuple] = []  # (start_date, end_date, reason)
+			for key, items in groups.items():
+				intervals, rep_reason = _coalesce(items)
+				for st, en in intervals:
+					to_insert.append((st, en, rep_reason))
+
+			# 3) Verificar conflictos con reservas si no viene forzado
+			force_flag = False
+			try:
+				force_flag = bool((payload.get('force') if isinstance(payload, dict) else False) or str(request.query_params.get('force', '')).lower() in ('1','true','yes'))
+			except Exception:
+				force_flag = False
+
+			if not force_flag and to_insert:
+				conflicts_summary: dict[str, int] = {}
+				for st, en, _reason in to_insert:
+					cur.execute(
+						"""
+						SELECT fecha_programada::date AS d, COUNT(*)
+						FROM solicitud_servicio
+						WHERE id_servicio_profesional=%s
+						  AND COALESCE(estado,'pendiente') <> 'cancelado'
+						  AND fecha_programada::date BETWEEN %s AND %s
+						GROUP BY d
+						""",
+						[service_id, st, en],
+					)
+					for d, cnt in cur.fetchall() or []:
+						key = d.isoformat()
+						conflicts_summary[key] = conflicts_summary.get(key, 0) + int(cnt or 0)
+				if conflicts_summary:
+					# Ordenar por fecha
+					dates_sorted = sorted(conflicts_summary.items())
+					return Response({
+						"message": "Hay reservas en algunos de los días que intentas bloquear.",
+						"conflicts": [{"date": k, "count": v} for k, v in dates_sorted],
+					}, status=status.HTTP_409_CONFLICT)
+
+			# 4) Insertar fusionados
+			for st, en, reason in to_insert:
 				cur.execute(
 					"""
 					INSERT INTO dia_bloqueado (
 						id_dia_bloqueado, id_servicio_profesional, fecha_inicio, fecha_fin, motivo
 					) VALUES (%s,%s,%s,%s,%s)
 					""",
-					[str(uuid.uuid4()), service_id, sd_dt, ed_dt, reason],
+					[str(uuid.uuid4()), service_id, st, en, reason],
 				)
 
 		# Reemplazar períodos personalizados
@@ -1450,6 +1540,121 @@ def schedule_detail(request, service_id: str):
 					continue
 
 	return Response({"ok": True})
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def schedule_block_conflicts(request, service_id: str):
+	"""Pre-chequea si existen reservas no canceladas en las fechas que se planean bloquear.
+
+	Body esperado:
+	{
+	  ranges: [{ start_date: 'YYYY-MM-DD', end_date: 'YYYY-MM-DD' }, ...]
+	  // o alternativamente
+	  dates: ['YYYY-MM-DD', ...]
+	}
+
+	Devuelve 200 con { conflicts: [{date, count}], total }.
+	"""
+	# Verificar propiedad del servicio
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal en 'usuario'"}, status=status.HTTP_400_BAD_REQUEST)
+	with connection.cursor() as cur:
+		cur.execute("SELECT rut_usuario FROM servicio_profesional WHERE id_servicio_profesional=%s", [service_id])
+		row = cur.fetchone()
+	if not row:
+		return Response({"message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+	if str(row[0]) != dom.rut:
+		return Response({"message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
+
+	data = request.data or {}
+	ranges = data.get('ranges') or []
+	dates = data.get('dates') or []
+
+	# Construir lista de (start_date, end_date)
+	intervals: list[tuple[date, date]] = []
+	try:
+		if ranges and isinstance(ranges, list):
+			for r in ranges:
+				sd = datetime.fromisoformat((r or {}).get('start_date', '')).date()
+				ed = datetime.fromisoformat((r or {}).get('end_date', '')).date()
+				if ed < sd:
+					sd, ed = ed, sd
+				intervals.append((sd, ed))
+		elif dates and isinstance(dates, list):
+			for ds in dates:
+				d = datetime.fromisoformat(str(ds)).date()
+				intervals.append((d, d))
+		else:
+			return Response({"message": "Se requieren 'ranges' o 'dates'"}, status=status.HTTP_400_BAD_REQUEST)
+	except Exception:
+		return Response({"message": "Formato de fechas inválido"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# Acumular conteo por fecha y detalles opcionales
+	want_detail = str(request.query_params.get('detail', '')).lower() in ('1','true','yes')
+	summary: dict[date, int] = {}
+	details: dict[date, list] = {}
+	with connection.cursor() as cur:
+		for sd, ed in intervals:
+			# Conteo por día
+			cur.execute(
+				"""
+				SELECT fecha_programada::date AS d, COUNT(*)
+				FROM solicitud_servicio
+				WHERE id_servicio_profesional=%s
+				  AND COALESCE(estado,'pendiente') <> 'cancelado'
+				  AND fecha_programada::date BETWEEN %s AND %s
+				GROUP BY d
+				""",
+				[service_id, sd, ed],
+			)
+			for d, cnt in cur.fetchall() or []:
+				summary[d] = summary.get(d, 0) + int(cnt or 0)
+
+			if want_detail:
+				# Traer hasta 5 detalles por día (hora inicio-fin y nombre cliente)
+				cur.execute(
+					"""
+					SELECT s.fecha_programada,
+						   COALESCE(NULLIF(s.duracion_minutos,0), 60) AS mins,
+						   COALESCE(u.nombres,'') AS nombres,
+						   COALESCE(u.apellidos,'') AS apellidos
+					FROM solicitud_servicio s
+					LEFT JOIN usuario u ON u.rut = s.rut_cliente
+					WHERE s.id_servicio_profesional=%s
+					  AND COALESCE(s.estado,'pendiente') <> 'cancelado'
+					  AND s.fecha_programada::date BETWEEN %s AND %s
+					ORDER BY s.fecha_programada ASC
+					LIMIT 50
+					""",
+					[service_id, sd, ed],
+				)
+				for ts, mins, nombres, apellidos in cur.fetchall() or []:
+					d = ts.date()
+					if summary.get(d, 0) <= 0:
+						continue
+					if d not in details:
+						details[d] = []
+					# preparar hora inicio-fin
+					try:
+						start = ts.strftime('%H:%M')
+						end = (ts + timedelta(minutes=int(mins or 60))).strftime('%H:%M')
+					except Exception:
+						start, end = '', ''
+					full_name = f"{nombres} {apellidos}".strip()
+					details[d].append({"start": start, "end": end, "client": full_name})
+
+	# Formatear salida
+	result = []
+	for d, c in sorted(summary.items()):
+		item = {"date": d.isoformat(), "count": c}
+		if want_detail and d in details:
+			# limitar a 5 detalles para no saturar
+			item["reservations"] = details[d][:5]
+		result.append(item)
+	return Response({"conflicts": result, "total": sum(summary.values())})
 
 
 @api_view(["POST"])

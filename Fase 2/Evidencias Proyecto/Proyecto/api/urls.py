@@ -16,6 +16,7 @@ from .views import (
     verifications_pending,
     verify_service,
     schedule_detail,
+    schedule_block_conflicts,
     services_search,
     toggle_service_visibility,
     service_availability,
@@ -53,6 +54,7 @@ urlpatterns = [
     path("my/services/", my_services, name="my_services"),
     # Scheduling
     path("schedule/<uuid:service_id>/", schedule_detail, name="schedule_detail"),
+    path("schedule/<uuid:service_id>/block-conflicts/", schedule_block_conflicts, name="schedule_block_conflicts"),
     path("services/search/", services_search, name="services_search"),
     path("services/<uuid:service_id>/availability/", service_availability, name="service_availability"),
     path("services/<uuid:service_id>/weekly-template/", service_weekly_template, name="service_weekly_template"),
