@@ -28,6 +28,14 @@ from .views import (
     service_weekly_template,
     my_requests,
 )
+from .payments import (
+    create_booking_and_payment,
+    create_payment_preference,
+    payment_webhook,
+    payment_status,
+    process_checkout_api_payment,
+    test_mp_credentials,
+)
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
@@ -65,4 +73,11 @@ urlpatterns = [
     path("requests/<uuid:request_id>/review/", create_review, name="create_review"),
     path("my/requests/", my_requests, name="my_requests"),
     path("services/<uuid:service_id>/visibility/", toggle_service_visibility, name="toggle_service_visibility"),
+    # Payments
+    path("payments/test-credentials/", test_mp_credentials, name="test_mp_credentials"),
+    path("payments/book/<uuid:service_id>/", create_booking_and_payment, name="create_booking_and_payment"),
+    path("payments/process/", process_checkout_api_payment, name="process_checkout_api_payment"),
+    path("payments/create/<uuid:request_id>/", create_payment_preference, name="create_payment_preference"),
+    path("payments/webhook/", payment_webhook, name="payment_webhook"),
+    path("payments/status/<uuid:request_id>/", payment_status, name="payment_status"),
 ]

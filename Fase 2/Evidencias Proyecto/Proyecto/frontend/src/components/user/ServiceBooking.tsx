@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar"
 import { Alert, AlertDescription } from "../ui/alert"
 import { Separator } from "../ui/separator"
 import { Calendar } from "../ui/calendar"
+import CheckoutForm from "../payments/CheckoutForm"
 import { 
   Calendar as CalendarIcon, 
   Clock, 
@@ -88,7 +89,7 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
   const [selectedDate, setSelectedDate] = useState<Date>()
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null)
   const [selectedDuration] = useState<number>(professional.fixedDuration || professional.minDuration || 60)
-  const [bookingStep, setBookingStep] = useState<'datetime' | 'details' | 'payment' | 'processing-payment' | 'confirmation'>('datetime')
+  const [bookingStep, setBookingStep] = useState<'datetime' | 'details' | 'payment' | 'confirmation'>('datetime')
   const [serviceDetails, setServiceDetails] = useState({
     address: '',
     description: '',
@@ -107,7 +108,8 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
     }
   }, [user])
   const [isBooking, setIsBooking] = useState(false)
-  const [, setPaymentUrl] = useState<string | null>(null) // kept for potential future use
+  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
 
   // Horario por defecto si no está definido
   const getDefaultWeeklySchedule = (): WeeklySchedule => ({
@@ -228,100 +230,75 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
     return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
   }
 
-  // Función para crear la preferencia de pago en MercadoPago
-  const createMercadoPagoPreference = async () => {
-    // Simular llamada a la API para crear preferencia de MercadoPago
-    // preferenceData simulado omitido por no uso en desarrollo
-
-    try {
-      // En producción, esto sería una llamada real a tu backend
-      // const response = await fetch('/api/create-payment-preference', {
-      //   method: 'POST',
-      //   headers: { 'Content-Type': 'application/json' },
-      //   body: JSON.stringify(preferenceData)
-      // })
-      // const data = await response.json()
-      
-      // Simulación para desarrollo
-      const mockResponse = {
-        init_point: `https://www.mercadopago.cl/checkout/v1/redirect?pref_id=123456789-${Date.now()}`,
-        id: `PREF-${Date.now()}`
-      }
-      
-      return mockResponse
-    } catch (error) {
-      console.error('Error creating MercadoPago preference:', error)
-      throw error
-    }
-  }
-
-  const handleBooking = async () => {
+  // Función para crear la reserva y preparar el pago
+  const handlePrepareBooking = async () => {
     setIsBooking(true)
-    setBookingStep('processing-payment')
+    setPaymentError(null)
     
-    try {
-      // Crear preferencia de pago en MercadoPago
-      const preference = await createMercadoPagoPreference()
-      
-      // Redirigir a MercadoPago
-      setPaymentUrl(preference.init_point)
-      
-      // Simular redirección para desarrollo
-      setTimeout(() => {
-        // En producción, aquí se haría window.location.href = preference.init_point
-        console.log('Redirigiendo a MercadoPago:', preference.init_point)
-        
-        // Simular pago exitoso después de 3 segundos
-        setTimeout(() => {
-          handlePaymentSuccess()
-        }, 3000)
-      }, 1000)
-      
-    } catch (error) {
-      console.error('Error en el proceso de pago:', error)
-      setIsBooking(false)
-      // Aquí podrías mostrar un mensaje de error
-    }
-  }
-
-  const handlePaymentSuccess = async () => {
-    // Persistir reserva en backend (requiere usuario autenticado)
     try {
       const isoDate = selectedDate?.toISOString().split('T')[0]
       const start = selectedTimeSlot?.start
-      if (!isoDate || !start) throw new Error('Faltan fecha u hora')
-      await apiPost(`/api/services/${professional.id}/book/`, {
+      
+      if (!isoDate || !start) {
+        throw new Error('Faltan fecha u hora')
+      }
+      
+      // Crear la solicitud con pago pendiente
+      const response = await apiPost(`/api/payments/book/${professional.id}/`, {
         date: isoDate,
         start,
+        duracion_minutos: selectedDuration,
         titulo: `Reserva de ${professional.service}`,
         descripcion: serviceDetails.description || `Reserva con ${professional.name}`,
         address: serviceDetails.address || '',
+        comuna_name: user?.district || '',
+        region_name: user?.region || '',
       }, { auth: true })
-    } catch (err) {
-      console.error('Error al guardar la reserva:', err)
-      // Podemos mostrar un aviso o permitir reintento en el futuro
+      
+      if (!response.request_id) {
+        throw new Error('No se recibió ID de solicitud')
+      }
+      
+      // Guardar el ID de la solicitud y continuar al formulario de pago
+      setCurrentRequestId(response.request_id)
+      setBookingStep('payment')
+      
+    } catch (error) {
+      console.error('Error preparando la reserva:', error)
+      setPaymentError('Error al preparar la reserva. Por favor intenta nuevamente.')
+    } finally {
+      setIsBooking(false)
     }
+  }
 
-    const booking = {
-      id: `BOOK-${Date.now()}`,
-      professional: professional.name,
-      service: professional.service,
-      date: selectedDate?.toISOString().split('T')[0],
-      time: selectedTimeSlot?.start,
-      duration: selectedDuration,
-      price: currentPrice,
-      status: 'Pagado',
-      serviceDetails,
-      paymentDate: new Date().toISOString()
-    }
-    
-    setIsBooking(false)
+  // Handler cuando el pago es exitoso
+  const handlePaymentSuccess = (paymentData: any) => {
+    console.log('Pago exitoso:', paymentData)
     setBookingStep('confirmation')
     
-    // Redirigir a "Mis Solicitudes" después de 3 segundos
+    // Redirigir a mis solicitudes después de 3 segundos
     setTimeout(() => {
-      onBookingComplete(booking)
+      onBookingComplete({
+        professional,
+        date: selectedDate,
+        time: selectedTimeSlot,
+        details: serviceDetails,
+        payment: paymentData
+      })
     }, 3000)
+  }
+
+  // Handler cuando hay un error en el pago
+  const handlePaymentError = (error: any) => {
+    console.error('Error en el pago:', error)
+    setPaymentError(error.message || 'Error procesando el pago')
+    setBookingStep('payment')
+  }
+
+  // Handler para volver desde el pago
+  const handleBackFromPayment = () => {
+    setBookingStep('details')
+    setPaymentError(null)
   }
 
   // Usar useMemo para evitar re-generación innecesaria de slots
@@ -376,83 +353,6 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
       serviceType: professional.service
     }
   ]
-
-  // Pantalla de procesamiento de pago
-  if (bookingStep === 'processing-payment') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <Card className="max-w-2xl w-full shadow-lg">
-          <CardContent className="text-center py-12 px-8">
-            <div className="w-20 h-20 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
-              <CreditCard className="w-10 h-10 text-white" />
-            </div>
-            
-            <h2 className="text-3xl font-bold text-gray-900 mb-3">Procesando Pago</h2>
-            <p className="text-gray-600 mb-8 text-lg">
-              Te estamos redirigiendo a MercadoPago para completar tu pago de manera segura.
-            </p>
-            
-            <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border p-6 mb-8">
-              <h3 className="font-semibold text-gray-900 mb-4">Resumen del Pago</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Servicio</p>
-                    <p className="font-medium">{professional.service}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Profesional</p>
-                    <p className="font-medium">{professional.name}</p>
-                  </div>
-                </div>
-                
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Fecha y Hora</p>
-                    <div className="space-y-1">
-                      <p className="font-medium">
-                        {selectedDate?.toLocaleDateString('es-ES', { 
-                          weekday: 'long', 
-                          day: 'numeric', 
-                          month: 'long' 
-                        })}
-                      </p>
-                      <p className="text-gray-600">{selectedTimeSlot?.start}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Total a Pagar</p>
-                    <p className="font-bold text-blue-600 text-xl">${currentPrice.toLocaleString()}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex items-center justify-center gap-2 text-blue-600">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-                <p className="text-sm font-medium">
-                  Conectando con MercadoPago...
-                </p>
-              </div>
-              
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <div className="flex items-start gap-3">
-                  <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5" />
-                  <div className="text-left">
-                    <p className="text-sm font-medium text-blue-800">Información de Seguridad</p>
-                    <p className="text-xs text-blue-700 mt-1">
-                      Tu pago será procesado de forma segura por MercadoPago. No guardaremos tu información de pago.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
-  }
 
   if (bookingStep === 'confirmation') {
     return (
@@ -893,11 +793,11 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
                     Volver
                   </Button>
                   <Button 
-                    onClick={() => setBookingStep('payment')}
-                    disabled={!serviceDetails.address || !serviceDetails.phone || !serviceDetails.description}
+                    onClick={handlePrepareBooking}
+                    disabled={!serviceDetails.address || !serviceDetails.phone || !serviceDetails.description || isBooking}
                     className="flex-1"
                   >
-                    Continuar al Pago
+                    {isBooking ? 'Preparando...' : 'Continuar al Pago'}
                   </Button>
                 </div>
               </CardContent>
@@ -909,10 +809,10 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <CreditCard className="w-5 h-5 text-blue-600" />
-                  Confirmación y Pago
+                  Pago del Servicio
                 </CardTitle>
                 <CardDescription>
-                  Revisa los detalles y procede al pago
+                  Completa el pago para confirmar tu reserva
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -920,6 +820,14 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
                 <div className="bg-gray-50 rounded-lg p-6">
                   <h4 className="font-medium mb-4">Resumen de tu Reserva</h4>
                   <div className="space-y-3 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Servicio:</span>
+                      <span className="font-medium">{professional.service}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Profesional:</span>
+                      <span className="font-medium">{professional.name}</span>
+                    </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">Fecha:</span>
                       <span className="font-medium">
@@ -935,52 +843,56 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
                       <span className="font-medium">{selectedTimeSlot?.start}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-gray-600">Duración estimada:</span>
-                      <span className="font-medium">
-                        {professional.durationType === 'fixed' 
-                          ? formatDuration(professional.fixedDuration || 60)
-                          : `${formatDuration(professional.minDuration || 60)} - ${formatDuration(professional.maxDuration || 240)}`
-                        }
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
                       <span className="text-gray-600">Dirección:</span>
                       <span className="font-medium">{serviceDetails.address}</span>
                     </div>
                     <Separator />
                     <div className="flex justify-between text-lg">
-                      <span className="font-medium">Total:</span>
+                      <span className="font-medium">Total a Pagar:</span>
                       <span className="font-bold text-green-600">${currentPrice.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Información del pago */}
+                {/* Mensaje de error si existe */}
+                {paymentError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{paymentError}</AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Información de seguridad */}
                 <Alert>
                   <AlertCircle className="h-4 w-4" />
                   <AlertDescription>
-                    Serás redirigido a MercadoPago para completar el pago de forma segura. 
-                    El profesional será notificado una vez confirmado el pago.
+                    Tu pago será procesado de forma segura por MercadoPago. 
+                    No guardaremos tu información de pago.
                   </AlertDescription>
                 </Alert>
 
-                <div className="flex gap-3 pt-6 border-t">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => setBookingStep('details')}
-                    className="flex-1"
-                  >
-                    Volver
-                  </Button>
-                  <Button 
-                    onClick={handleBooking}
-                    disabled={isBooking}
-                    className="flex-1"
-                    size="lg"
-                  >
-                    {isBooking ? 'Procesando...' : 'Pagar con MercadoPago'}
-                  </Button>
-                </div>
+                {/* Formulario de pago embebido */}
+                {currentRequestId ? (
+                  <CheckoutForm
+                    amount={currentPrice}
+                    description={`${professional.service} - ${professional.name}`}
+                    requestId={currentRequestId}
+                    onSuccess={handlePaymentSuccess}
+                    onError={handlePaymentError}
+                    onBack={handleBackFromPayment}
+                  />
+                ) : (
+                  <div className="text-center py-4">
+                    <Button 
+                      onClick={handlePrepareBooking}
+                      disabled={isBooking}
+                      size="lg"
+                      className="w-full"
+                    >
+                      {isBooking ? 'Preparando pago...' : 'Continuar al Pago'}
+                    </Button>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
