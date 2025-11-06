@@ -18,7 +18,10 @@ from django.db import connection, transaction, IntegrityError
 from django.utils import timezone
 import uuid
 import os
+import logging
 from django.core.files.storage import default_storage
+
+logger = logging.getLogger(__name__)
 from django.core.files.base import ContentFile
 from rest_framework.parsers import MultiPartParser, FormParser
 from typing import Tuple, List, Optional
@@ -2525,8 +2528,9 @@ def booking_cancel(request, request_id: str):
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def booking_complete(request, request_id: str):
-	"""Profesional marca como completada una solicitud. Cambia estado a 'completado' y setea completado_en.
-	Solo el profesional dueño puede completar.
+	"""Cliente marca como completada una solicitud para confirmar que el servicio se realizó.
+	Esto libera el pago al profesional. Solo el cliente dueño puede completar.
+	También se puede auto-completar después de 3 días de la fecha del servicio.
 	"""
 	# Resolver rut del usuario autenticado
 	try:
@@ -2537,16 +2541,27 @@ def booking_complete(request, request_id: str):
 	with connection.cursor() as cur:
 		cur.execute(
 			"""
-			SELECT rut_profesional, estado FROM solicitud_servicio WHERE id_solicitud_servicio=%s
+			SELECT rut_cliente, rut_profesional, estado, fecha_programada FROM solicitud_servicio 
+			WHERE id_solicitud_servicio=%s
 			""",
 			[request_id],
 		)
 		row = cur.fetchone()
 	if not row:
 		return Response({"message": "Solicitud no encontrada"}, status=status.HTTP_404_NOT_FOUND)
-	rut_prof, estado = row
-	if str(rut_prof or '') != str(dom.rut or ''):
-		return Response({"message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
+	
+	rut_cliente, rut_prof, estado, fecha_programada = row
+	
+	# Logging para debug
+	logger.info(f"Completar servicio - User: {request.user.email}, RUT usuario: {dom.rut}, RUT cliente: {rut_cliente}, RUT profesional: {rut_prof}")
+	
+	# Solo el cliente puede marcar como completado
+	if str(rut_cliente or '') != str(dom.rut or ''):
+		return Response({
+			"message": "No autorizado. Solo el cliente puede confirmar que el servicio se completó.",
+			"detail": f"Requiere RUT cliente: {rut_cliente}"
+		}, status=status.HTTP_403_FORBIDDEN)
+	
 	if (estado or '').lower() in ("cancelado", "completado"):
 		return Response({"message": f"No se puede completar una solicitud en estado '{estado}'"}, status=status.HTTP_400_BAD_REQUEST)
 

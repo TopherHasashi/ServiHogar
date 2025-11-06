@@ -16,6 +16,7 @@ import {
   AlertDialogTrigger,
 } from "../../ui/alert-dialog"
 import ReviewModal from "../ReviewModal"
+import { apiPost } from "../../../lib/api"
 import { 
   Calendar,
   Clock,
@@ -48,7 +49,7 @@ export default function RequestsTab({
   const [requestsTab, setRequestsTab] = useState("client")
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [selectedServiceForReview, setSelectedServiceForReview] = useState<any>(null)
-
+  
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Completado":
@@ -145,7 +146,7 @@ export default function RequestsTab({
                             ${request.price.toLocaleString()}
                           </span>
                           
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             {(request.status === "Pendiente" || request.status === "Confirmado") && (
                               <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -176,6 +177,7 @@ export default function RequestsTab({
                                 </AlertDialogContent>
                               </AlertDialog>
                             )}
+                            
                             {request.status === "Confirmado" && (
                               <Button
                                 onClick={() => onMarkAsCompleted(request.id)}
