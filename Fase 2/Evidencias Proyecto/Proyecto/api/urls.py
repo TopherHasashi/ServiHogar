@@ -15,6 +15,7 @@ from .views import (
     apply_professional,
     verifications_pending,
     verify_service,
+    verifier_stats,
     schedule_detail,
     schedule_block_conflicts,
     services_search,
@@ -51,6 +52,7 @@ urlpatterns = [
     path("professional/apply/", apply_professional, name="apply_professional"),
     path("verifications/pending/", verifications_pending, name="verifications_pending"),
     path("verifications/service/<uuid:servicio_id>/", verify_service, name="verify_service"),
+    path("verifications/stats/", verifier_stats, name="verifier_stats"),
     # Debug helpers
     path("auth/debug/reset-admin/", reset_admin, name="reset_admin"),
     path("auth/debug/reset-verifier/", reset_verifier, name="reset_verifier"),

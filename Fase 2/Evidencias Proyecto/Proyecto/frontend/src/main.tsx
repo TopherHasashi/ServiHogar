@@ -44,28 +44,45 @@ function Layout() {
   )
 }
 
+// Layout para páginas autenticadas (sin Header público ni Footer)
+function AuthenticatedLayout() {
+  return (
+    <div className="min-h-screen flex flex-col">
+      <main className="flex-1">
+        <Outlet />
+      </main>
+    </div>
+  )
+}
+
 const router = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
     children: [
       { index: true, element: <App /> },
-  { path: 'servicios', element: <ServiciosPage /> },
-  { path: 'como-funciona', element: <ComoFuncionaPage /> },
-  { path: 'resenas', element: <ResenasPage /> },
-  { path: 'login', element: <LoginPage /> },
-  { path: 'register', element: <RegisterPage /> },
-  { path: 'profesional', element: <ProfesionalPage /> },
-  { path: 'verificador', element: <VerificadorPage /> },
-  { path: 'cliente', element: <ClientePage /> },
-  { path: 'admin', element: <AdminPage /> },
-  { path: 'payment/success', element: <PaymentSuccessPage /> },
-  { path: 'payment/failure', element: <PaymentFailurePage /> },
-  { path: 'payment/pending', element: <PaymentPendingPage /> },
-  { path: 'contacto', element: <ContactoPage /> },
-  { path: 'terminos', element: <TerminosPage /> },
-  { path: 'privacidad', element: <PrivacidadPage /> },
-  { path: '*', element: <NotFoundPage /> },
+      { path: 'servicios', element: <ServiciosPage /> },
+      { path: 'como-funciona', element: <ComoFuncionaPage /> },
+      { path: 'resenas', element: <ResenasPage /> },
+      { path: 'login', element: <LoginPage /> },
+      { path: 'register', element: <RegisterPage /> },
+      { path: 'contacto', element: <ContactoPage /> },
+      { path: 'terminos', element: <TerminosPage /> },
+      { path: 'privacidad', element: <PrivacidadPage /> },
+      { path: 'payment/success', element: <PaymentSuccessPage /> },
+      { path: 'payment/failure', element: <PaymentFailurePage /> },
+      { path: 'payment/pending', element: <PaymentPendingPage /> },
+      { path: '*', element: <NotFoundPage /> },
+    ],
+  },
+  {
+    path: '/',
+    element: <AuthenticatedLayout />,
+    children: [
+      { path: 'profesional', element: <ProfesionalPage /> },
+      { path: 'verificador', element: <VerificadorPage /> },
+      { path: 'cliente', element: <ClientePage /> },
+      { path: 'admin', element: <AdminPage /> },
     ],
   },
 ])

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+// @ts-ignore - MercadoPago SDK React types may not be available
 import { initMercadoPago, CardPayment } from '@mercadopago/sdk-react'
 import { Button } from '../ui/button'
 import { Alert, AlertDescription } from '../ui/alert'

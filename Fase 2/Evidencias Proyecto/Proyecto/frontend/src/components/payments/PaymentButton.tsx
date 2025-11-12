@@ -19,8 +19,8 @@ interface PaymentButtonProps {
 export default function PaymentButton({
   requestId,
   amount,
-  serviceName,
-  professionalName,
+  serviceName: _serviceName,
+  professionalName: _professionalName,
   onPaymentInitiated,
   onPaymentCompleted,
   variant = "default",

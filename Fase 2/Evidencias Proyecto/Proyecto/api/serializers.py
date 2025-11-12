@@ -144,6 +144,31 @@ class RegisterSerializer(serializers.Serializer):
             return "no_binario"
         raise serializers.ValidationError("Género inválido. Use: masculino, femenino, no_binario")
 
+    def validate_phone(self, value):
+        # Acepta formatos: +56912345678, 56912345678, 912345678
+        # Limpia y valida que tenga el formato correcto
+        import re
+        v = (value or '').strip()
+        if not v:
+            raise serializers.ValidationError("Teléfono es requerido")
+        # Remover espacios y caracteres especiales excepto '+'
+        clean = re.sub(r'[^\d+]', '', v)
+        # Verificar formato chileno: debe tener 9 dígitos después del código de país
+        # Formatos aceptados: +56912345678 (11 dígitos con +), 56912345678 (11 dígitos), 912345678 (9 dígitos)
+        digits_only = clean.replace('+', '')
+        if len(digits_only) == 9:
+            # Formato: 912345678 - agregar código de país
+            if not digits_only.startswith('9'):
+                raise serializers.ValidationError("Número celular debe comenzar con 9")
+            return '+56' + digits_only
+        elif len(digits_only) == 11 and digits_only.startswith('56'):
+            # Formato: 56912345678
+            if not digits_only[2] == '9':
+                raise serializers.ValidationError("Número celular debe comenzar con 9 después del código de país")
+            return '+' + digits_only
+        else:
+            raise serializers.ValidationError("Formato de teléfono inválido. Use: +56912345678 o 912345678")
+
     def validate_birth_date(self, value):
         # Rechaza menores de 18 años
         from datetime import date

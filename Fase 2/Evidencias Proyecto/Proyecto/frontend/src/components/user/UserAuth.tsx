@@ -10,6 +10,7 @@ import { Separator } from "../ui/separator"
 import { Alert, AlertDescription, AlertTitle } from "../ui/alert"
 import { 
   User, 
+  
   Mail, 
   Lock, 
   Phone, 
@@ -264,12 +265,14 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
     }
     try {
       setRegisterSubmitting(true)
+      // Limpiar teléfono: remover espacios y caracteres no numéricos excepto '+'
+      const cleanPhone = registerForm.phone.replace(/\s/g, '').replace(/[^\d+]/g, '')
       const payload: any = {
         first_name: registerForm.firstName,
         last_name: registerForm.lastName,
         email: registerForm.email,
         password: registerForm.password,
-        phone: registerForm.phone,
+        phone: cleanPhone,
         rut: registerForm.rut,
         gender: registerForm.gender,
         birth_date: registerForm.birthDate,
@@ -297,7 +300,19 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
       navigate('/cliente')
     } catch (err: any) {
       // El wrapper ya entrega sólo el mensaje limpio
-      const msg = err?.message || 'Intenta nuevamente.'
+      let msg = err?.message || 'Error al crear la cuenta. Intenta nuevamente.'
+      
+      // Mejorar mensajes de error comunes
+      if (msg.includes('RUT ya está registrado')) {
+        msg = 'Este RUT ya está registrado. Si es tu cuenta, inicia sesión o recupera tu contraseña.'
+      } else if (msg.includes('email ya está registrado')) {
+        msg = 'Este correo ya está registrado. Si es tu cuenta, inicia sesión o recupera tu contraseña.'
+      } else if (msg.includes('Formato de teléfono inválido')) {
+        msg = 'El formato del teléfono no es válido. Debe ser +56912345678 o 912345678'
+      } else if (msg.includes('comuna')) {
+        msg = 'La región o comuna seleccionada no es válida. Por favor, selecciona nuevamente.'
+      }
+      
       setRegisterError(msg)
       toast.error(msg)
     } finally {

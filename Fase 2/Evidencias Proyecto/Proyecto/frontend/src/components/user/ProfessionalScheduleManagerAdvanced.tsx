@@ -179,6 +179,36 @@ export default function ProfessionalScheduleManagerAdvanced({
       if (!selectedService) return
       try {
         const data = await apiGetAuth(`/api/schedule/${selectedService}/`)
+        
+        // Filtrar días bloqueados en el pasado
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        
+        const unavailabilities = (data.unavailabilities || [])
+          .map((u: any) => ({
+            id: String(u.id),
+            type: 'unavailable' as const,
+            startDate: new Date(u.start_date),
+            endDate: new Date(u.end_date),
+            reason: u.reason || '',
+          }))
+          .filter((u: any) => {
+            // Solo mantener bloques que tengan al menos un día >= hoy
+            const endDate = new Date(u.endDate)
+            endDate.setHours(0, 0, 0, 0)
+            return endDate >= today
+          })
+          .map((u: any) => {
+            // Si el bloque empieza en el pasado pero termina en el futuro,
+            // ajustar fecha de inicio a hoy
+            const startDate = new Date(u.startDate)
+            startDate.setHours(0, 0, 0, 0)
+            if (startDate < today) {
+              return { ...u, startDate: new Date(today) }
+            }
+            return u
+          })
+        
         setServiceSchedules(prev => ({
           ...prev,
           [selectedService]: {
@@ -188,13 +218,7 @@ export default function ProfessionalScheduleManagerAdvanced({
               data.weekly_template,
               prev[selectedService]?.weeklyTemplate || getDefaultWeeklySchedule()
             ),
-            customAvailability: (data.unavailabilities || []).map((u: any) => ({
-              id: String(u.id),
-              type: 'unavailable',
-              startDate: new Date(u.start_date),
-              endDate: new Date(u.end_date),
-              reason: u.reason || '',
-            })),
+            customAvailability: unavailabilities,
             customSchedulePeriods: (data.custom_periods || []).map((p: any) => ({
               id: String(p.id),
               name: p.name,
@@ -313,6 +337,17 @@ export default function ProfessionalScheduleManagerAdvanced({
 
   // Manejar selección de fechas
   const handleDateSelect = (date: Date) => {
+    // Prevenir seleccionar fechas en el pasado
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const dateToCheck = new Date(date)
+    dateToCheck.setHours(0, 0, 0, 0)
+    
+    if (dateToCheck < today) {
+      alert('No puedes marcar días pasados como no disponibles.')
+      return
+    }
+    
     // Evitar seleccionar un día ya bloqueado
     if (selectedService && isBlocked(date, selectedService)) return
     setSelectedDates(prev => {
@@ -332,6 +367,9 @@ export default function ProfessionalScheduleManagerAdvanced({
 
   // Seleccionar semana completa
   const selectWeek = (startDate: Date) => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
     const weekDates: Date[] = []
     const start = new Date(startDate)
     // Ir al lunes de esa semana
@@ -341,12 +379,22 @@ export default function ProfessionalScheduleManagerAdvanced({
       const date = new Date(start)
       date.setDate(start.getDate() + i)
       
-      // Solo agregar fechas del mes actual que sean visibles
+      // Solo agregar fechas del mes actual que sean visibles y no pasadas
       const isCurrentMonth = date.getMonth() === currentMonth.getMonth() && 
                             date.getFullYear() === currentMonth.getFullYear()
-      if (isCurrentMonth && (!selectedService || !isBlocked(date, selectedService))) {
+      const dateToCheck = new Date(date)
+      dateToCheck.setHours(0, 0, 0, 0)
+      const isPast = dateToCheck < today
+      
+      if (isCurrentMonth && !isPast && (!selectedService || !isBlocked(date, selectedService))) {
         weekDates.push(date)
       }
+    }
+    
+    // Si no hay fechas válidas (todas son pasadas), mostrar alerta
+    if (weekDates.length === 0) {
+      alert('No puedes marcar semanas pasadas como no disponibles.')
+      return
     }
     
     setSelectedDates(prev => {
@@ -1161,7 +1209,15 @@ export default function ProfessionalScheduleManagerAdvanced({
                         const isStartOfWeek = day.date.getDay() === 1 // Lunes
                         const currentWeekSelected = isStartOfWeek && isWeekSelected(day.date)
                         const blocked = selectedService ? isBlocked(day.date, selectedService) : false
-                        const disabled = !day.isCurrentMonth
+                        
+                        // Verificar si el día es pasado
+                        const today = new Date()
+                        today.setHours(0, 0, 0, 0)
+                        const dateToCheck = new Date(day.date)
+                        dateToCheck.setHours(0, 0, 0, 0)
+                        const isPast = dateToCheck < today
+                        
+                        const disabled = !day.isCurrentMonth || isPast
                         
                         return (
                           <div key={index} className="relative min-h-[40px]">

@@ -10,19 +10,18 @@ export default function PaymentSuccessPage() {
   const [status, setStatus] = useState<"loading" | "success" | "pending" | "failure">("loading")
 
   // Parámetros que envía Mercado Pago
-  const collection_id = searchParams.get("collection_id")
+  // const _collection_id = searchParams.get("collection_id")
   const collection_status = searchParams.get("collection_status")
   const payment_id = searchParams.get("payment_id")
   const status_param = searchParams.get("status")
-  const external_reference = searchParams.get("external_reference")
-  const payment_type = searchParams.get("payment_type")
-  const merchant_order_id = searchParams.get("merchant_order_id")
-  const preference_id = searchParams.get("preference_id")
+  // const _external_reference = searchParams.get("external_reference")
+  // const _payment_type = searchParams.get("payment_type")
+  // const _merchant_order_id = searchParams.get("merchant_order_id")
+  // const _preference_id = searchParams.get("preference_id")
 
   useEffect(() => {
     // Determinar el estado basado en los parámetros
     const actualStatus = collection_status || status_param || ""
-    
     if (actualStatus === "approved") {
       setStatus("success")
     } else if (actualStatus === "pending" || actualStatus === "in_process") {
