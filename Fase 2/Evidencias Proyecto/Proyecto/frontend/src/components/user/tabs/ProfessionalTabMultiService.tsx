@@ -222,17 +222,32 @@ export default function ProfessionalTabMultiService({
     }
   }
 
+  /**
+   * Alterna la visibilidad de un servicio profesional.
+   * Validaciones:
+   * - UUID válido
+   * - Advertencia al deshabilitar (UX)
+   * - Manejo de errores específicos del backend (ej: reservas activas)
+   */
   const handleToggleServiceActive = async (serviceId: string) => {
     if (!userProfessionalProfile) return
+    
     // Validar que el ID sea un UUID (ruta backend exige <uuid:service_id>)
     const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/
     if (!uuidRegex.test(serviceId)) {
       alert('Este servicio aún no tiene un ID válido (posible servicio simulado o no aprobado).')
       return
     }
+    
     const target = userProfessionalProfile.services.find(s => s.id === serviceId)
-    const next = !(target?.isActive)
-    const approved = target?.verificationStatus === 'approved'
+    if (!target) {
+      console.error('Servicio no encontrado en estado local:', serviceId)
+      return
+    }
+    
+    const next = !target.isActive
+    const approved = target.verificationStatus === 'approved'
+    
     // Si no está aprobado, no impacta el buscador igual; sólo UX local
     if (!approved) {
       onUpdateProfessionalProfile({
@@ -241,21 +256,73 @@ export default function ProfessionalTabMultiService({
       })
       return
     }
+    
+    // Advertencia al DESHABILITAR
+    if (target.isActive) {
+      const userConfirmed = window.confirm(
+        "⚠️ Al deshabilitar este servicio:\n\n" +
+        "• Ya no aparecerás en búsquedas públicas\n" +
+        "• Los clientes no podrán hacer nuevas reservas\n" +
+        "• Si tienes reservas futuras activas, debes cancelarlas primero\n\n" +
+        "¿Deseas continuar?"
+      )
+      
+      if (!userConfirmed) {
+        return // Usuario canceló
+      }
+    }
+    
     // Optimistic UI
     onUpdateProfessionalProfile({
       ...userProfessionalProfile,
       services: userProfessionalProfile.services.map(s => s.id === serviceId ? { ...s, isActive: next } : s)
     })
+    
     try {
-      await apiPutAuth(`/api/services/${serviceId}/visibility/`, { is_active: next })
+      const response = await apiPutAuth(`/api/services/${serviceId}/visibility/`, { is_active: next })
+      
+      // Verificar respuesta del backend
+      if (response?.ok === false) {
+        throw new Error(response.message || 'Error al cambiar visibilidad del servicio')
+      }
+      
+      // Éxito: mostrar confirmación breve si es necesario
+      console.log('✅ Servicio actualizado:', response)
+      
     } catch (e: any) {
-      // rollback on error
+      // Rollback de actualización optimista
       onUpdateProfessionalProfile({
         ...userProfessionalProfile,
         services: userProfessionalProfile.services.map(s => s.id === serviceId ? { ...s, isActive: !next } : s)
       })
-      const msg = typeof e?.message === 'string' ? e.message : ''
-      alert(msg || 'Error desconocido')
+      
+      // Manejo de errores específicos
+      const errorData = e?.response?.data || e
+      const errorMsg = errorData?.message || e?.message || 'Error desconocido al cambiar estado del servicio'
+      
+      // Caso especial: reservas activas
+      if (errorData?.active_reservations && errorData.active_reservations > 0) {
+        alert(
+          `❌ No se puede deshabilitar el servicio\n\n` +
+          `${errorMsg}\n\n` +
+          `Reservas futuras activas: ${errorData.active_reservations}\n\n` +
+          `💡 Ve a la pestaña "Reservas" para gestionar las reservas pendientes.`
+        )
+      } 
+      // Caso especial: estado no permitido
+      else if (errorMsg.toLowerCase().includes('estado')) {
+        alert(
+          `❌ Estado no válido\n\n` +
+          `${errorMsg}\n\n` +
+          `Solo puedes alternar servicios aprobados o suspendidos.`
+        )
+      }
+      // Error genérico
+      else {
+        alert(`❌ ${errorMsg}`)
+      }
+      
+      console.error('Error al cambiar visibilidad:', e)
     }
   }
 
@@ -900,10 +967,31 @@ export default function ProfessionalTabMultiService({
                         </div>
                       </div>
                     </div>
-                    <Switch
-                      checked={service.isActive}
-                      onCheckedChange={() => handleToggleServiceActive(service.id)}
-                    />
+                    <div className="flex flex-col items-end gap-1">
+                      <Switch
+                        checked={service.isActive}
+                        onCheckedChange={() => handleToggleServiceActive(service.id)}
+                        disabled={
+                          service.verificationStatus !== 'approved' && 
+                          service.verificationStatus !== 'suspended'
+                        }
+                      />
+                      {service.verificationStatus === 'pending' && (
+                        <span className="text-xs text-amber-600 dark:text-amber-400 text-right">
+                          En verificación
+                        </span>
+                      )}
+                      {service.verificationStatus === 'rejected' && (
+                        <span className="text-xs text-red-600 dark:text-red-400 text-right">
+                          Rechazado
+                        </span>
+                      )}
+                      {(service.verificationStatus === 'approved' || service.verificationStatus === 'suspended') && (
+                        <span className={`text-xs ${service.isActive ? 'text-green-600 dark:text-green-400' : 'text-gray-500'} text-right`}>
+                          {service.isActive ? 'Activo' : 'Suspendido'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1179,10 +1267,26 @@ export default function ProfessionalTabMultiService({
                         <Switch
                           checked={service.isActive}
                           onCheckedChange={() => handleToggleServiceActive(service.id)}
+                          disabled={
+                            service.verificationStatus !== 'approved' && 
+                            service.verificationStatus !== 'suspended'
+                          }
                         />
-                        <span className="text-sm text-gray-600">
-                          {service.isActive ? "Activo" : "Inactivo"}
-                        </span>
+                        {service.verificationStatus === 'pending' && (
+                          <span className="text-sm text-amber-600 dark:text-amber-400">
+                            En verificación
+                          </span>
+                        )}
+                        {service.verificationStatus === 'rejected' && (
+                          <span className="text-sm text-red-600 dark:text-red-400">
+                            Rechazado
+                          </span>
+                        )}
+                        {(service.verificationStatus === 'approved' || service.verificationStatus === 'suspended') && (
+                          <span className="text-sm text-gray-600">
+                            {service.isActive ? "Activo" : "Suspendido"}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <Button

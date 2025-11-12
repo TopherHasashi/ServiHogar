@@ -150,6 +150,29 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
       try {
         const iso = selectedDate.toISOString().split('T')[0]
         const res = await fetch(`${API_URL}/api/services/${professional.id}/availability/?start=${iso}&end=${iso}`)
+        
+        // Manejo de servicio suspendido o no disponible
+        if (res.status === 403) {
+          alert(
+            "⚠️ Servicio no disponible\n\n" +
+            "Este servicio ya no está disponible para reservas. " +
+            "El profesional puede haberlo suspendido temporalmente.\n\n" +
+            "Te recomendamos buscar servicios similares en nuestra plataforma."
+          )
+          window.location.href = '/servicios'
+          return
+        }
+        
+        // Servicio no encontrado
+        if (res.status === 404) {
+          alert(
+            "❌ Servicio no encontrado\n\n" +
+            "Este servicio puede haber sido eliminado."
+          )
+          window.location.href = '/servicios'
+          return
+        }
+        
         if (!res.ok) return
         const data = await res.json()
         const day = (data?.days || []).find((d: any) => d?.date === iso)

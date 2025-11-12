@@ -16,12 +16,29 @@ import {
   Star,
   ArrowLeft,
   AlertTriangle,
-  
-  AlertCircle
+  AlertCircle,
+  TrendingUp,
+  Award,
+  Clock
 } from "lucide-react"
 
 interface VerifierDashboardProps {
   onLogout: () => void
+}
+
+interface VerifierStats {
+  totals: {
+    total: number
+    pendientes: number
+    aprobados: number
+    rechazados: number
+    suspendidos: number
+  }
+  today_count: number
+  verifier_total: number
+  daily_stats: Array<{ fecha: string; cantidad: number }>
+  avg_per_day: number
+  rut_verificador: string | null
 }
 
 interface ProfessionalDocument {
@@ -55,6 +72,23 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
   const [viewingDocUrl, setViewingDocUrl] = useState<string | null>(null)
   const [viewingDocName, setViewingDocName] = useState<string | null>(null)
   const [pendingVerifications, setPendingVerifications] = useState<ProfessionalDocument[]>([])
+  const [stats, setStats] = useState<VerifierStats | null>(null)
+  const [isLoadingStats, setIsLoadingStats] = useState(true)
+
+  // Cargar estadísticas del verificador
+  useEffect(() => {
+    const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+    fetch(`${API}/api/verifications/stats/`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('auth_access') || ''}` }
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const data = await r.json()
+        setStats(data)
+      })
+      .catch(() => {})
+      .finally(() => setIsLoadingStats(false))
+  }, [])
 
   useEffect(() => {
     const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
@@ -89,6 +123,19 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
       .catch(() => {})
   }, [])
 
+  const reloadStats = () => {
+    const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+    fetch(`${API}/api/verifications/stats/`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('auth_access') || ''}` }
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        const data = await r.json()
+        setStats(data)
+      })
+      .catch(() => {})
+  }
+
   const handleApprove = async (serviceId: string) => {
     const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
     try {
@@ -102,6 +149,8 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
       })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       setPendingVerifications(prev => prev.filter(p => p.id !== serviceId))
+      setSelectedProfessional(null)
+      reloadStats()
       alert('Servicio aprobado')
     } catch (e: any) {
       alert(e?.message || 'Error')
@@ -122,6 +171,8 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
       })
       if (!r.ok) throw new Error(`HTTP ${r.status}`)
       setPendingVerifications(prev => prev.filter(p => p.id !== serviceId))
+      setSelectedProfessional(null)
+      reloadStats()
       alert('Servicio rechazado')
     } catch (e: any) {
       alert(e?.message || 'Error')
@@ -158,7 +209,7 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b shadow-sm">
-  <div className="w-full px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center py-4 gap-4">
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center flex-shrink-0">
@@ -177,7 +228,74 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
         </div>
       </div>
 
-  <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+      {/* Panel de Estadísticas */}
+      {!isLoadingStats && stats && (
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-4 bg-gradient-to-r from-amber-50 to-orange-50 border-b">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+            {/* Verificaciones de Hoy */}
+            <Card className="bg-white shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600 mb-1">Verificadas Hoy</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-green-600">{stats.today_count}</p>
+                  </div>
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-100 rounded-full flex items-center justify-center">
+                    <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-green-600" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Total del Verificador */}
+            <Card className="bg-white shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600 mb-1">Total Verificadas</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-blue-600">{stats.verifier_total}</p>
+                  </div>
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                    <Award className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Pendientes */}
+            <Card className="bg-white shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600 mb-1">Pendientes</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-amber-600">{stats.totals.pendientes}</p>
+                  </div>
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-amber-100 rounded-full flex items-center justify-center">
+                    <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Promedio Diario */}
+            <Card className="bg-white shadow-sm hover:shadow-md transition-shadow">
+              <CardContent className="p-3 sm:p-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs sm:text-sm text-gray-600 mb-1">Promedio/Día</p>
+                    <p className="text-2xl sm:text-3xl font-bold text-purple-600">{stats.avg_per_day}</p>
+                  </div>
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-100 rounded-full flex items-center justify-center">
+                    <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-purple-600" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
+
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
           {/* Lista de Verificaciones Pendientes */}
           <div className="lg:col-span-1">

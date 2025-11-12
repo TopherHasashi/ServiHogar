@@ -436,6 +436,38 @@ def my_services(request):
 def register(request):
 	serializer = RegisterSerializer(data=request.data)
 	if serializer.is_valid():
+		# Pre-save checks: ensure the main dominio `usuario` will not reject this registration.
+		# This prevents creating a Django user/profile when the dominio table already contains the RUT or email
+		# or when the provided comuna_id is invalid.
+		try:
+			# Extract raw values from validated data or initial data
+			raw_rut = (serializer.validated_data.get('rut') or serializer.initial_data.get('rut') or '').strip()
+			raw_email = (serializer.validated_data.get('email') or serializer.initial_data.get('email') or '').strip()
+			raw_comuna = serializer.validated_data.get('comuna_id') if 'comuna_id' in serializer.validated_data else (serializer.initial_data.get('comuna_id') if serializer.initial_data else None)
+		except Exception:
+			raw_rut = raw_email = raw_comuna = None
+
+		# Check duplicates in dominio table
+		try:
+			if raw_rut and UsuarioDominio.objects.filter(rut=raw_rut).exists():
+				return Response("Este RUT ya está registrado en el sistema principal. Inicia sesión o recupera tu contraseña.", status=status.HTTP_400_BAD_REQUEST, content_type="text/plain")
+			if raw_email and UsuarioDominio.objects.filter(email=raw_email).exists():
+				return Response("Este email ya está registrado en el sistema principal. Inicia sesión o recupera tu contraseña.", status=status.HTTP_400_BAD_REQUEST, content_type="text/plain")
+		except Exception:
+			# If dominio DB is temporarily unavailable, proceed to attempt save and handle later in atomic block
+			pass
+
+		# Validate comuna_id correctness when provided (ensure it exists in comuna table)
+		if raw_comuna:
+			try:
+				with connection.cursor() as cur:
+					cur.execute("SELECT 1 FROM comuna WHERE id_comuna = %s LIMIT 1", [str(raw_comuna)])
+					if cur.fetchone() is None:
+						return Response("comuna_id inválida", status=status.HTTP_400_BAD_REQUEST, content_type="text/plain")
+			except Exception:
+				# If check cannot be performed, continue and let downstream upsert handle it
+				pass
+
 		with transaction.atomic():
 			user = serializer.save()
 			# Insertar/actualizar en la tabla dominio `usuario` (obligatorio)
@@ -451,16 +483,7 @@ def register(request):
 				with connection.cursor() as cur:
 					_id_region, resolved = _resolve_region_comuna(cur, getattr(profile, 'region', None), getattr(profile, 'district', None))
 					comuna_id = str(resolved) if resolved else None
-			# Seguridad adicional: si el RUT ya existe en `usuario`, no permitir crear segunda cuenta
-			try:
-				existing_rut = UsuarioDominio.objects.filter(rut=getattr(serializer, '_saved_rut', None) or getattr(profile, 'rut', None)).exists()
-			except Exception:
-				existing_rut = False
-			if existing_rut:
-				# Revertir creación del usuario Django
-				user.delete()
-				msg = "El RUT ya está registrado en el sistema principal. Por favor, inicia sesión o recupera tu contraseña."
-				return Response(msg, status=status.HTTP_400_BAD_REQUEST, content_type="text/plain")
+			# Intentar insertar en usuario dominio
 			ok = _upsert_usuario_dominio(
 				first_name=user.first_name,
 				last_name=user.last_name,
@@ -477,12 +500,12 @@ def register(request):
 				comuna_id_override=comuna_id,
 			)
 			if not ok:
-				# Revertir creación del usuario Django si no se pudo persistir en dominio
-				# Eliminar el usuario Django creado en esta transacción
-				user.delete()
+				# Marcar transacción para rollback automático
+				transaction.set_rollback(True)
+				# Levantar excepción de validación con detalles
 				raise drf_serializers.ValidationError({
-					"usuario": "No se pudo guardar en la tabla principal 'usuario'. Verifique: RUT, email único, y comuna válida.",
-					"rut": getattr(profile, 'rut', None),
+					"usuario": "No se pudo guardar en la tabla principal 'usuario'. Verifique: RUT único, email único, y comuna válida.",
+					"rut": getattr(serializer, '_saved_rut', None) or getattr(profile, 'rut', None),
 					"comuna_id": comuna_id,
 				})
 			# Emitir tokens tras registro
@@ -792,6 +815,15 @@ def apply_professional(request):
 
 	if not general_desc or not category_slug or exp_int is None or not description or not price_fixed:
 		return Response({"message": "Faltan campos requeridos"}, status=status.HTTP_400_BAD_REQUEST)
+	
+	# VALIDACIÓN 3: Validar que el precio sea positivo
+	if price_fixed <= 0:
+		return Response({"message": "El precio debe ser mayor a 0"}, status=status.HTTP_400_BAD_REQUEST)
+	
+	# VALIDACIÓN 4: Validar rango razonable de años de experiencia
+	if exp_int < 0 or exp_int > 50:
+		return Response({"message": "Los años de experiencia deben estar entre 0 y 50"}, status=status.HTTP_400_BAD_REQUEST)
+	
 	if duration_type not in {"fixed", "range"}:
 		return Response({"message": "duration_type inválido"}, status=status.HTTP_400_BAD_REQUEST)
 	# Validación de duración según tipo
@@ -843,6 +875,47 @@ def apply_professional(request):
 		return Response({"message": "Categoría no encontrada"}, status=status.HTTP_400_BAD_REQUEST)
 	id_cat = row[0]
 
+	# VALIDACIÓN 1: Verificar que no exista ya un servicio con esta categoría para este profesional
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT COUNT(*)
+			FROM servicio_profesional
+			WHERE rut_usuario = %s AND id_categoria_servicio = %s
+			""",
+			[dom.rut, id_cat],
+		)
+		dup_count = cur.fetchone()[0]
+	if dup_count > 0:
+		with connection.cursor() as cur:
+			cur.execute(
+				"SELECT nombre FROM categoria_servicio WHERE id_categoria_servicio = %s",
+				[id_cat],
+			)
+			cat_row = cur.fetchone()
+			cat_nombre = cat_row[0] if cat_row else category_slug
+		return Response(
+			{"message": f"Ya tienes un servicio en la categoría '{cat_nombre}'. No puedes crear servicios duplicados en la misma categoría."},
+			status=status.HTTP_400_BAD_REQUEST
+		)
+
+	# VALIDACIÓN 2: Verificar que no supere el límite de 3 servicios
+	with connection.cursor() as cur:
+		cur.execute(
+			"""
+			SELECT COUNT(*)
+			FROM servicio_profesional
+			WHERE rut_usuario = %s
+			""",
+			[dom.rut],
+		)
+		total_servicios = cur.fetchone()[0]
+	if total_servicios >= 3:
+		return Response(
+			{"message": "Has alcanzado el límite máximo de 3 servicios. No puedes agregar más servicios."},
+			status=status.HTTP_400_BAD_REQUEST
+		)
+
 	now = timezone.now()
 	with transaction.atomic():
 		id_serv = uuid.uuid4()
@@ -892,11 +965,24 @@ def apply_professional(request):
 
 		# Validaciones simples de archivos
 		max_bytes = 5 * 1024 * 1024
-		if cert_file and cert_file.size > max_bytes:
-			return Response({"message": "Certificado supera 5MB"}, status=status.HTTP_400_BAD_REQUEST)
+		allowed_mimes = {'application/pdf', 'image/jpeg', 'image/jpg', 'image/png'}
+		
+		# VALIDACIÓN 5: Validar tipo MIME y tamaño del certificado
+		if cert_file:
+			if cert_file.size > max_bytes:
+				return Response({"message": "Certificado supera 5MB"}, status=status.HTTP_400_BAD_REQUEST)
+			cert_mime = getattr(cert_file, 'content_type', '').lower()
+			if cert_mime not in allowed_mimes:
+				return Response({"message": "Certificado debe ser PDF, JPG o PNG"}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# VALIDACIÓN 5: Validar tipo MIME y tamaño de documentos de experiencia
 		for ef in exp_files:
 			if ef.size > max_bytes:
 				return Response({"message": "Un archivo de experiencia supera 5MB"}, status=status.HTTP_400_BAD_REQUEST)
+			exp_mime = getattr(ef, 'content_type', '').lower()
+			if exp_mime not in allowed_mimes:
+				return Response({"message": "Los documentos de experiencia deben ser PDF, JPG o PNG"}, status=status.HTTP_400_BAD_REQUEST)
+		
 		# Requerir al menos un documento de experiencia para el envío
 		if not exp_files or len(exp_files) == 0:
 			return Response({"message": "Debes adjuntar al menos un documento de experiencia"}, status=status.HTTP_400_BAD_REQUEST)
@@ -1175,6 +1261,146 @@ def verify_service(request, servicio_id: str):
 	return Response({"ok": True})
 
 
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def verifier_stats(request):
+	"""Estadísticas del verificador: verificaciones por día, totales, etc.
+	Solo visible para verificadores/administradores.
+	"""
+	u = request.user
+	role = 'administrador' if (u.is_staff or u.is_superuser) else getattr(getattr(u, 'profile', None), 'role', 'cliente')
+	if role not in {"verificador", "administrador"}:
+		return Response({"message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
+
+	# Obtener RUT del verificador si existe
+	try:
+		dom_ver = UsuarioDominio.objects.get(email=u.email)
+		rut_ver = dom_ver.rut
+	except UsuarioDominio.DoesNotExist:
+		rut_ver = None
+
+	with connection.cursor() as cur:
+		# 1. Totales generales
+		cur.execute(
+			"""
+			SELECT 
+				COUNT(*) as total,
+				COUNT(CASE WHEN estado_verificacion = 'pendiente' THEN 1 END) as pendientes,
+				COUNT(CASE WHEN estado_verificacion = 'aprobado' THEN 1 END) as aprobados,
+				COUNT(CASE WHEN estado_verificacion = 'rechazado' THEN 1 END) as rechazados,
+				COUNT(CASE WHEN estado_verificacion = 'suspendido' THEN 1 END) as suspendidos
+			FROM servicio_profesional
+			"""
+		)
+		totals = cur.fetchone()
+
+		# 2. Verificaciones del día actual (por este verificador si hay RUT)
+		today = timezone.now().date()
+		if rut_ver:
+			cur.execute(
+				"""
+				SELECT COUNT(*) 
+				FROM servicio_profesional 
+				WHERE DATE(verificado_en) = %s AND rut_verificador = %s
+				""",
+				[today, rut_ver]
+			)
+		else:
+			cur.execute(
+				"""
+				SELECT COUNT(*) 
+				FROM servicio_profesional 
+				WHERE DATE(verificado_en) = %s
+				""",
+				[today]
+			)
+		today_count = cur.fetchone()[0]
+
+		# 3. Verificaciones por día (últimos 7 días) - solo para este verificador
+		if rut_ver:
+			cur.execute(
+				"""
+				SELECT DATE(verificado_en) as fecha, COUNT(*) as cantidad
+				FROM servicio_profesional
+				WHERE verificado_en IS NOT NULL AND rut_verificador = %s
+				GROUP BY DATE(verificado_en)
+				ORDER BY fecha DESC
+				LIMIT 7
+				""",
+				[rut_ver]
+			)
+		else:
+			cur.execute(
+				"""
+				SELECT DATE(verificado_en) as fecha, COUNT(*) as cantidad
+				FROM servicio_profesional
+				WHERE verificado_en IS NOT NULL
+				GROUP BY DATE(verificado_en)
+				ORDER BY fecha DESC
+				LIMIT 7
+				"""
+			)
+		daily_stats = [{"fecha": str(row[0]), "cantidad": row[1]} for row in cur.fetchall()]
+
+		# 4. Total de verificaciones del verificador actual (toda su historia)
+		if rut_ver:
+			cur.execute(
+				"""
+				SELECT COUNT(*) 
+				FROM servicio_profesional 
+				WHERE rut_verificador = %s
+				""",
+				[rut_ver]
+			)
+			verifier_total = cur.fetchone()[0]
+		else:
+			verifier_total = 0
+
+		# 5. Promedio de verificaciones por día (últimos 30 días)
+		if rut_ver:
+			cur.execute(
+				"""
+				SELECT COALESCE(AVG(cnt), 0)
+				FROM (
+					SELECT DATE(verificado_en), COUNT(*) as cnt
+					FROM servicio_profesional
+					WHERE verificado_en >= CURRENT_DATE - INTERVAL '30 days' 
+					  AND rut_verificador = %s
+					GROUP BY DATE(verificado_en)
+				) as daily_counts
+				""",
+				[rut_ver]
+			)
+		else:
+			cur.execute(
+				"""
+				SELECT COALESCE(AVG(cnt), 0)
+				FROM (
+					SELECT DATE(verificado_en), COUNT(*) as cnt
+					FROM servicio_profesional
+					WHERE verificado_en >= CURRENT_DATE - INTERVAL '30 days'
+					GROUP BY DATE(verificado_en)
+				) as daily_counts
+				"""
+			)
+		avg_per_day = float(cur.fetchone()[0] or 0)
+
+	return Response({
+		"totals": {
+			"total": totals[0],
+			"pendientes": totals[1],
+			"aprobados": totals[2],
+			"rechazados": totals[3],
+			"suspendidos": totals[4]
+		},
+		"today_count": today_count,
+		"verifier_total": verifier_total,
+		"daily_stats": daily_stats,
+		"avg_per_day": round(avg_per_day, 1),
+		"rut_verificador": rut_ver
+	})
+
+
 @api_view(["GET", "PUT"])
 @permission_classes([permissions.IsAuthenticated])
 def schedule_detail(request, service_id: str):
@@ -1348,6 +1574,125 @@ def schedule_detail(request, service_id: str):
 		except Exception:
 			return False
 
+	# ===== FUNCIONES DE VALIDACIÓN DE SOLAPAMIENTO =====
+	
+	def _time_to_minutes(time_str: str) -> int:
+		"""Convierte HH:MM a minutos desde medianoche para comparar rangos"""
+		try:
+			h, m = map(int, time_str.split(':'))
+			return h * 60 + m
+		except Exception:
+			return 0
+	
+	def _ranges_overlap(start1: str, end1: str, start2: str, end2: str) -> bool:
+		"""Detecta si dos rangos horarios se solapan"""
+		s1 = _time_to_minutes(start1)
+		e1 = _time_to_minutes(end1)
+		s2 = _time_to_minutes(start2)
+		e2 = _time_to_minutes(end2)
+		# Rangos se solapan si: NOT (end1 <= start2 OR start1 >= end2)
+		return not (e1 <= s2 or s1 >= e2)
+	
+	def _validate_slot_duration(start: str, end: str) -> tuple[bool, str]:
+		"""Valida que la duración del horario sea razonable (30 min - 12 horas)"""
+		s_min = _time_to_minutes(start)
+		e_min = _time_to_minutes(end)
+		duration_min = e_min - s_min
+		
+		if duration_min < 30:
+			return False, "La franja horaria debe tener al menos 30 minutos de duración"
+		if duration_min > 12 * 60:
+			return False, "La franja horaria no puede exceder 12 horas"
+		return True, ""
+	
+	def _check_intra_service_overlap(day_slots: dict) -> tuple[bool, str]:
+		"""Valida que las franjas del mismo día NO se solapen entre sí"""
+		day_names_es = {
+			'monday': 'Lunes', 'tuesday': 'Martes', 'wednesday': 'Miércoles',
+			'thursday': 'Jueves', 'friday': 'Viernes', 'saturday': 'Sábado', 'sunday': 'Domingo'
+		}
+		
+		for day_key, conf in day_slots.items():
+			if not conf.get('enabled'):
+				continue
+			slots = conf.get('timeSlots', [])
+			if len(slots) <= 1:
+				continue
+			
+			# Comparar cada par de slots del mismo día
+			for i in range(len(slots)):
+				for j in range(i + 1, len(slots)):
+					st1, en1 = slots[i].get('start'), slots[i].get('end')
+					st2, en2 = slots[j].get('start'), slots[j].get('end')
+					
+					if _ranges_overlap(st1, en1, st2, en2):
+						day_es = day_names_es.get(day_key, day_key)
+						return False, f"Las franjas horarias del {day_es} se solapan: {st1}-{en1} con {st2}-{en2}"
+		
+		return True, ""
+	
+	def _check_cross_service_overlap(cur, rut_usuario: str, service_id: str, day_slots: dict) -> tuple[bool, str]:
+		"""Valida que los horarios NO solapen con otros servicios del mismo profesional"""
+		day_names_es = {
+			'monday': 'Lunes', 'tuesday': 'Martes', 'wednesday': 'Miércoles',
+			'thursday': 'Jueves', 'friday': 'Viernes', 'saturday': 'Sábado', 'sunday': 'Domingo'
+		}
+		
+		# Obtener todos los horarios de otros servicios del profesional
+		cur.execute("""
+			SELECT hp.dia_semana, to_char(hp.hora_inicio, 'HH24:MI'), to_char(hp.hora_fin, 'HH24:MI'),
+			       cs.nombre AS categoria
+			FROM horario_profesional hp
+			JOIN servicio_profesional sp ON hp.id_servicio_profesional = sp.id_servicio_profesional
+			JOIN categoria_servicio cs ON sp.id_categoria_servicio = cs.id_categoria_servicio
+			WHERE sp.rut_usuario = %s
+			  AND sp.id_servicio_profesional != %s
+			ORDER BY hp.dia_semana, hp.hora_inicio
+		""", [rut_usuario, service_id])
+		
+		other_schedules = cur.fetchall()
+		if not other_schedules:
+			return True, ""  # No hay otros servicios, OK
+		
+		# Agrupar por día
+		schedules_by_day = {}
+		for dia_idx, h_ini, h_fin, categoria in other_schedules:
+			if dia_idx not in schedules_by_day:
+				schedules_by_day[dia_idx] = []
+			schedules_by_day[dia_idx].append({
+				'start': h_ini,
+				'end': h_fin,
+				'categoria': categoria
+			})
+		
+		# Validar cada día propuesto contra horarios existentes
+		for day_key, conf in day_slots.items():
+			if not conf.get('enabled'):
+				continue
+			
+			day_idx = index_from_weekday_name(day_key)
+			if day_idx is None or day_idx not in schedules_by_day:
+				continue
+			
+			slots = conf.get('timeSlots', [])
+			for slot in slots:
+				st_new = slot.get('start')
+				en_new = slot.get('end')
+				
+				# Comparar contra cada horario existente del mismo día
+				for existing in schedules_by_day[day_idx]:
+					if _ranges_overlap(st_new, en_new, existing['start'], existing['end']):
+						day_es = day_names_es.get(day_key, day_key)
+						return False, (
+							f"Conflicto de horario: El {day_es} de {st_new} a {en_new} solapa con tu servicio de "
+							f"{existing['categoria']} ({existing['start']}-{existing['end']}). "
+							f"No puedes trabajar en dos servicios al mismo tiempo."
+						)
+		
+		return True, ""
+	
+	# ===== VALIDACIONES =====
+	
 	if weekly_template and isinstance(weekly_template, dict):
 		for day, conf in weekly_template.items():
 			if not isinstance(conf, dict):
@@ -1360,6 +1705,22 @@ def schedule_detail(request, service_id: str):
 					en = (sl or {}).get('end')
 					if not (isinstance(st, str) and isinstance(en, str) and _valid_time(st) and _valid_time(en) and st < en):
 						return Response({"message": f"Horario inválido en {day} índice {i}"}, status=status.HTTP_400_BAD_REQUEST)
+					
+					# Validar duración razonable
+					valid_duration, duration_msg = _validate_slot_duration(st, en)
+					if not valid_duration:
+						return Response({"message": duration_msg}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Validar solapamiento dentro del mismo servicio (intra-service)
+		valid_intra, intra_msg = _check_intra_service_overlap(weekly_template)
+		if not valid_intra:
+			return Response({"message": intra_msg}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Validar solapamiento con otros servicios del profesional (cross-service)
+		with connection.cursor() as cur:
+			valid_cross, cross_msg = _check_cross_service_overlap(cur, dom.rut, service_id, weekly_template)
+			if not valid_cross:
+				return Response({"message": cross_msg}, status=status.HTTP_409_CONFLICT)
 
 	# Persistir en tablas de dominio (replace-all semantics)
 	with transaction.atomic():
@@ -1517,8 +1878,67 @@ def schedule_detail(request, service_id: str):
 					return Response({"message": "La fecha de inicio no puede ser anterior a hoy"}, status=status.HTTP_400_BAD_REQUEST)
 				wt = (item or {}).get('weekly_template') or {}
 				name = ((item or {}).get('name') or '')[:200]
+				
+				# ===== VALIDAR PERÍODOS PERSONALIZADOS =====
 				if isinstance(wt, dict) and wt:
-					# expandir por día
+					# 1. Validar duración y solapamiento intra-period (dentro del período)
+					valid_intra, intra_msg = _check_intra_service_overlap(wt)
+					if not valid_intra:
+						return Response({"message": f"Error en período '{name}': {intra_msg}"}, status=status.HTTP_400_BAD_REQUEST)
+					
+					# 2. Validar solapamiento con otros servicios del profesional (cross-service)
+					# Para cada día del período, verificar contra horarios de otros servicios
+					temp_day = sd
+					while temp_day <= ed:
+						day_idx = temp_day.weekday()  # 0=Monday, 6=Sunday
+						dn = weekday_name_from_index(day_idx)
+						conf = wt.get(dn) or {}
+						
+						if conf.get('enabled') and conf.get('timeSlots'):
+							# Obtener horarios de otros servicios para este día
+							cur.execute("""
+								SELECT to_char(hp.hora_inicio, 'HH24:MI'), to_char(hp.hora_fin, 'HH24:MI'), cs.nombre
+								FROM horario_profesional hp
+								JOIN servicio_profesional sp ON hp.id_servicio_profesional = sp.id_servicio_profesional
+								JOIN categoria_servicio cs ON sp.id_categoria_servicio = cs.id_categoria_servicio
+								WHERE sp.rut_usuario = %s
+								  AND sp.id_servicio_profesional != %s
+								  AND hp.dia_semana = %s
+							""", [dom.rut, service_id, day_idx])
+							
+							other_services = cur.fetchall()
+							
+							# Validar cada slot del período contra otros servicios
+							for slot in conf.get('timeSlots', []):
+								st = slot.get('start')
+								en = slot.get('end')
+								
+								# Validar duración
+								valid_duration, duration_msg = _validate_slot_duration(st, en)
+								if not valid_duration:
+									return Response({
+										"message": f"Error en período '{name}' ({temp_day.isoformat()}): {duration_msg}"
+									}, status=status.HTTP_400_BAD_REQUEST)
+								
+								# Validar contra otros servicios
+								for other_start, other_end, other_cat in other_services:
+									if _ranges_overlap(st, en, other_start, other_end):
+										day_names_es = {
+											'monday': 'Lunes', 'tuesday': 'Martes', 'wednesday': 'Miércoles',
+											'thursday': 'Jueves', 'friday': 'Viernes', 'saturday': 'Sábado', 'sunday': 'Domingo'
+										}
+										day_es = day_names_es.get(dn, dn)
+										return Response({
+											"message": (
+												f"Conflicto en período '{name}': El {day_es} {temp_day.isoformat()} "
+												f"de {st} a {en} solapa con tu servicio de {other_cat} "
+												f"({other_start}-{other_end}). No puedes trabajar en dos servicios al mismo tiempo."
+											)
+										}, status=status.HTTP_409_CONFLICT)
+						
+						temp_day += timedelta(days=1)
+					
+					# 3. Insertar período después de validación exitosa
 					cur_day = sd
 					while cur_day <= ed:
 						dn = weekday_name_from_index(cur_day.weekday())
@@ -1940,14 +2360,28 @@ def services_search(request):
 @api_view(["PUT"])
 @permission_classes([permissions.IsAuthenticated])
 def toggle_service_visibility(request, service_id: str):
-	"""Enable/disable a service in search results for its owner.
-	Body: { is_active: boolean }
+	"""
+	Alterna la visibilidad de un servicio (aprobado <-> suspendido).
+	Solo el propietario puede alternar. Si intenta suspender, valida que no haya reservas futuras.
+	
+	Body JSON:
+		{
+			"is_active": true/false
+		}
+	
+	Respuesta:
+		{
+			"ok": true/false,
+			"service_id": "uuid",
+			"is_active": true/false,
+			"message": "..." (opcional)
+		}
 	"""
 	# Verify the service belongs to the authenticated user via dominio.usuario
 	try:
 		dom = UsuarioDominio.objects.get(email=request.user.email)
 	except UsuarioDominio.DoesNotExist:
-		return Response({"message": "Usuario sin registro principal en 'usuario'"}, status=status.HTTP_400_BAD_REQUEST)
+		return Response({"ok": False, "message": "Usuario sin registro principal en 'usuario'"}, status=status.HTTP_400_BAD_REQUEST)
 
 	# Coerce to str for comparisons and model PK
 	service_id_str = str(service_id)
@@ -1956,39 +2390,103 @@ def toggle_service_visibility(request, service_id: str):
 			cur.execute("SELECT rut_usuario FROM servicio_profesional WHERE id_servicio_profesional = %s::uuid", [service_id_str])
 			row = cur.fetchone()
 	except Exception as e:
-		return Response({"message": "Error consultando el servicio", "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+		return Response({"ok": False, "message": "Error consultando el servicio", "error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 	if not row:
-		return Response({"message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+		return Response({"ok": False, "message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
 	if str(row[0]) != dom.rut:
-		return Response({"message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
+		return Response({"ok": False, "message": "No autorizado"}, status=status.HTTP_403_FORBIDDEN)
 
 	raw = request.data.get('is_active')
+	if raw is None:
+		return Response({"ok": False, "message": "Se requiere el campo 'is_active'"}, status=status.HTTP_400_BAD_REQUEST)
+	
 	if isinstance(raw, bool):
 		is_active = raw
 	else:
 		val = str(raw).strip().lower()
 		is_active = val in {"1", "true", "t", "yes", "y", "on"}
 
-	# Mapear a estado_verificacion: si is_active False y estaba aprobado -> pasar a suspendido. Si True y estaba suspendido -> pasar a aprobado
+	# Obtener estado actual
 	with connection.cursor() as cur:
 		cur.execute("SELECT estado_verificacion FROM servicio_profesional WHERE id_servicio_profesional=%s", [service_id_str])
 		row2 = cur.fetchone()
 		if not row2:
-			return Response({"message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
+			return Response({"ok": False, "message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
 		current_state = (row2[0] or '').lower()
-		new_state = current_state
-		if is_active is False and current_state == 'aprobado':
-			new_state = 'suspendido'
-		elif is_active is True and current_state == 'suspendido':
-			new_state = 'aprobado'
-		# Otros estados: mantener
-		if new_state != current_state:
+	
+	# Validar estados permitidos
+	if current_state not in ('aprobado', 'suspendido'):
+		return Response(
+			{
+				"ok": False,
+				"message": f"No puedes cambiar la visibilidad de un servicio en estado '{current_state}'. Solo servicios aprobados o suspendidos pueden alternarse."
+			},
+			status=status.HTTP_400_BAD_REQUEST
+		)
+	
+	# Determinar nuevo estado
+	new_state = current_state
+	
+	# Si intenta DESHABILITAR (is_active=False) y está aprobado
+	if is_active is False and current_state == 'aprobado':
+		# VALIDACIÓN CRÍTICA: Verificar reservas futuras activas
+		with connection.cursor() as cur:
 			cur.execute(
-				"UPDATE servicio_profesional SET estado_verificacion=%s, actualizado_en=%s WHERE id_servicio_profesional=%s",
-				[new_state, timezone.now(), service_id_str],
+				"""
+				SELECT COUNT(*) 
+				FROM solicitud_servicio
+				WHERE id_servicio_profesional = %s
+				  AND fecha_programada >= CURRENT_DATE
+				  AND estado IN ('pendiente', 'confirmada', 'en_curso')
+				""",
+				[service_id_str]
 			)
+			active_reservations = cur.fetchone()[0]
+		
+		if active_reservations > 0:
+			return Response(
+				{
+					"ok": False,
+					"message": f"No puedes deshabilitar este servicio porque tienes {active_reservations} reserva(s) futura(s) activa(s). Cancélalas primero o espera a que finalicen.",
+					"active_reservations": active_reservations,
+					"service_id": service_id_str,
+					"is_active": True  # mantener activo
+				},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		new_state = 'suspendido'
+	
+	# Si intenta HABILITAR (is_active=True) y está suspendido
+	elif is_active is True and current_state == 'suspendido':
+		new_state = 'aprobado'
+	
+	# Si no hay cambio necesario
+	if new_state == current_state:
+		return Response(
+			{
+				"ok": True,
+				"service_id": service_id_str,
+				"is_active": (new_state == 'aprobado'),
+				"message": "El servicio ya está en el estado solicitado"
+			}
+		)
+	
+	# Actualizar estado
+	with connection.cursor() as cur:
+		cur.execute(
+			"UPDATE servicio_profesional SET estado_verificacion=%s, actualizado_en=%s WHERE id_servicio_profesional=%s",
+			[new_state, timezone.now(), service_id_str],
+		)
 
-	return Response({"ok": True, "service_id": service_id, "is_active": is_active})
+	return Response(
+		{
+			"ok": True,
+			"service_id": service_id_str,
+			"is_active": (new_state == 'aprobado'),
+			"message": f"Servicio {'habilitado' if new_state == 'aprobado' else 'deshabilitado'} exitosamente"
+		}
+	)
 
 
 @api_view(["GET"])
