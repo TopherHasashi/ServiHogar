@@ -37,6 +37,26 @@ from .payments import (
     process_checkout_api_payment,
     test_mp_credentials,
 )
+from .admin_views import (
+    admin_dashboard_summary,
+)
+from .bank_account_views import (
+    get_servihogar_bank_accounts,
+    create_servihogar_bank_account,
+    update_servihogar_bank_account,
+    delete_servihogar_bank_account,
+    get_bank_account_stats,
+)
+from .config_views import (
+    get_system_config, 
+    update_system_config, 
+    get_config_value,
+)
+from .operations_views import (
+    get_problematic_requests,
+    get_operations_stats,
+    resolve_request_issue,
+)
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 urlpatterns = [
@@ -82,4 +102,20 @@ urlpatterns = [
     path("payments/create/<uuid:request_id>/", create_payment_preference, name="create_payment_preference"),
     path("payments/webhook/", payment_webhook, name="payment_webhook"),
     path("payments/status/<uuid:request_id>/", payment_status, name="payment_status"),
+    # Admin
+    path("admin/dashboard/summary/", admin_dashboard_summary, name="admin_dashboard_summary"),
+    # Bank Accounts ServiHogar
+    path("admin/bank-accounts/", get_servihogar_bank_accounts, name="get_servihogar_bank_accounts"),
+    path("admin/bank-accounts/create/", create_servihogar_bank_account, name="create_servihogar_bank_account"),
+    path("admin/bank-accounts/<uuid:account_id>/", update_servihogar_bank_account, name="update_servihogar_bank_account"),
+    path("admin/bank-accounts/<uuid:account_id>/delete/", delete_servihogar_bank_account, name="delete_servihogar_bank_account"),
+    path("admin/bank-accounts/stats/", get_bank_account_stats, name="get_bank_account_stats"),
+    # System Configuration
+    path("admin/config/", get_system_config, name="get_system_config"),
+    path("admin/config/update/", update_system_config, name="update_system_config"),
+    path("admin/config/<str:clave>/", get_config_value, name="get_config_value"),
+    # Operations Center
+    path("admin/operations/problematic-requests/", get_problematic_requests, name="get_problematic_requests"),
+    path("admin/operations/stats/", get_operations_stats, name="get_operations_stats"),
+    path("admin/operations/resolve/<uuid:request_id>/", resolve_request_issue, name="resolve_request_issue"),
 ]

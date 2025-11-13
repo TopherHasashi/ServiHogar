@@ -150,3 +150,14 @@ export async function apiPutAuth<TBody extends Record<string, any>>(path: string
   if (ct.includes('application/json')) return res.json()
   return { ok: true } as any
 }
+
+export async function apiDeleteAuth(path: string) {
+  const headers: Record<string, string> = { 'Accept': 'application/json' }
+  const res = await fetchWithAuth(`${API_URL}${path}`, { method: 'DELETE', headers })
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res))
+  }
+  const ct = res.headers.get('content-type') || ''
+  if (ct.includes('application/json')) return res.json()
+  return { ok: true } as any
+}
