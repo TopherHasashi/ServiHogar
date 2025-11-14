@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import { API_URL, apiPostForm, apiPutAuth } from "../../../lib/api"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../ui/card"
 import { Button } from "../../ui/button"
@@ -73,7 +74,12 @@ export default function ProfessionalTabMultiService({
   onUpdateProfessionalProfile,
   onBecomeProfessional 
 }: ProfessionalTabMultiServiceProps) {
-  const [professionalTab, setProfessionalTab] = useState("overview")
+  const [searchParams, setSearchParams] = useSearchParams()
+  
+  // Leer el subtab desde la URL, o usar "overview" por defecto
+  const subTabFromUrl = searchParams.get('subTab') || 'overview'
+  const [professionalTab, setProfessionalTab] = useState(subTabFromUrl)
+  
   const [showProfessionalForm, setShowProfessionalForm] = useState(false)
   const [editingService, setEditingService] = useState<string | null>(null)
   const [showAddServiceForm, setShowAddServiceForm] = useState(false)
@@ -83,6 +89,13 @@ export default function ProfessionalTabMultiService({
 
   // Categorías de servicios disponibles
   const [serviceCategories, setServiceCategories] = useState<{ id: string; name: string; slug: string }[]>([])
+
+  // Función para cambiar de subtab (actualiza estado y URL manteniendo el mainTab)
+  const handleTabChange = (newSubTab: string) => {
+    setProfessionalTab(newSubTab)
+    const mainTab = searchParams.get('mainTab') || 'professional'
+    setSearchParams({ mainTab, subTab: newSubTab }, { replace: true })
+  }
 
   useEffect(() => {
     // Cargar categorías desde API
@@ -247,9 +260,21 @@ export default function ProfessionalTabMultiService({
     
     const next = !target.isActive
     const approved = target.verificationStatus === 'approved'
+    const suspended = target.verificationStatus === 'suspended'
     
-    // Si no está aprobado, no impacta el buscador igual; sólo UX local
-    if (!approved) {
+    console.log('🔍 Toggle Debug Info:', {
+      serviceId,
+      serviceName: target.categoryName,
+      currentIsActive: target.isActive,
+      nextIsActive: next,
+      verificationStatus: target.verificationStatus,
+      approved,
+      suspended
+    })
+    
+    // Si no está aprobado NI suspendido (ej: pending, rejected), no enviar al backend
+    if (!approved && !suspended) {
+      console.warn('⚠️ Servicio en estado:', target.verificationStatus, '- solo actualización local')
       onUpdateProfessionalProfile({
         ...userProfessionalProfile,
         services: userProfessionalProfile.services.map(s => s.id === serviceId ? { ...s, isActive: next } : s)
@@ -278,18 +303,43 @@ export default function ProfessionalTabMultiService({
       services: userProfessionalProfile.services.map(s => s.id === serviceId ? { ...s, isActive: next } : s)
     })
     
+    console.log('📤 Enviando petición al backend:', {
+      url: `/api/services/${serviceId}/visibility/`,
+      body: { is_active: next }
+    })
+    
     try {
       const response = await apiPutAuth(`/api/services/${serviceId}/visibility/`, { is_active: next })
+      
+      console.log('📥 Respuesta del backend:', response)
       
       // Verificar respuesta del backend
       if (response?.ok === false) {
         throw new Error(response.message || 'Error al cambiar visibilidad del servicio')
       }
       
+      // Actualizar con el valor real del servidor
+      if (response && typeof response.is_active === 'boolean') {
+        onUpdateProfessionalProfile({
+          ...userProfessionalProfile,
+          services: userProfessionalProfile.services.map(s => 
+            s.id === serviceId 
+              ? { 
+                  ...s, 
+                  isActive: response.is_active,
+                  verificationStatus: response.is_active ? 'approved' : 'suspended'
+                } 
+              : s
+          )
+        })
+      }
+      
       // Éxito: mostrar confirmación breve si es necesario
-      console.log('✅ Servicio actualizado:', response)
+      console.log('✅ Servicio actualizado exitosamente:', response)
       
     } catch (e: any) {
+      console.error('❌ Error al cambiar visibilidad:', e)
+      
       // Rollback de actualización optimista
       onUpdateProfessionalProfile({
         ...userProfessionalProfile,
@@ -824,7 +874,7 @@ export default function ProfessionalTabMultiService({
 
   return (
     <div className="space-y-6">
-      <Tabs value={professionalTab} onValueChange={setProfessionalTab}>
+      <Tabs value={professionalTab} onValueChange={handleTabChange}>
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="overview">Resumen</TabsTrigger>
           <TabsTrigger value="services">Servicios</TabsTrigger>

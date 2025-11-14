@@ -1,4 +1,4 @@
-import { useState } from "react"
+﻿import { useState } from "react"
 import { Card, CardContent } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -9,9 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "./ui/dialog"
 import { Label } from "./ui/label"
-// import { ImageWithFallback } from "./figma/ImageWithFallback"
 import { 
-  ArrowLeft, 
   Star, 
   MessageCircle, 
   ThumbsUp, 
@@ -26,10 +24,10 @@ import {
 } from "lucide-react"
 
 interface CustomerReviewsProps {
-  onBack?: () => void
+  // Props opcionales si se necesitan en el futuro
 }
 
-export default function CustomerReviews({ onBack }: CustomerReviewsProps) {
+export default function CustomerReviews({}: CustomerReviewsProps = {}) {
   const [selectedTab, setSelectedTab] = useState("all")
   const [sortBy, setSortBy] = useState("recent")
   const [searchTerm, setSearchTerm] = useState("")
@@ -282,12 +280,7 @@ export default function CustomerReviews({ onBack }: CustomerReviewsProps) {
       {/* Header */}
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex items-center justify-between mb-6">
-            <Button variant="ghost" onClick={() => onBack?.()}>
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Volver al inicio
-            </Button>
-            
+          <div className="flex items-center justify-end mb-6">
             <Dialog open={showAddReview} onOpenChange={setShowAddReview}>
               <DialogTrigger asChild>
                 <Button>
@@ -307,7 +300,7 @@ export default function CustomerReviews({ onBack }: CustomerReviewsProps) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <Label htmlFor="service">Servicio recibido</Label>
-                      <Select value={newReview.service} onValueChange={(value: string) => setNewReview({...newReview, service: value})}>
+                      <Select value={newReview.service} onValueChange={(value) => setNewReview({...newReview, service: value})}>
                         <SelectTrigger>
                           <SelectValue placeholder="Selecciona el servicio" />
                         </SelectTrigger>

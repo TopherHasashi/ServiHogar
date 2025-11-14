@@ -103,7 +103,7 @@ export default function ProfessionalScheduleManagerAdvanced({
   // Siempre bloqueamos días completos por ahora (unavailable)
   // No se usa de momento, siempre bloqueamos días completos (unavailable)
   const [customReason, setCustomReason] = useState("")
-  const [viewMode, setViewMode] = useState<'calendar' | 'weekly' | 'custom-periods'>('calendar')
+  const [viewMode, setViewMode] = useState<'calendar' | 'weekly' | 'custom-periods'>('weekly')
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   
@@ -1055,15 +1055,6 @@ export default function ProfessionalScheduleManagerAdvanced({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                onClick={() => setViewMode(viewMode === 'calendar' ? 'weekly' : 'calendar')}
-              >
-                <Settings className="w-4 h-4 mr-2" />
-                {viewMode === 'calendar' ? 'Vista Semanal' : 'Vista Calendario'}
-              </Button>
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -1320,25 +1311,6 @@ export default function ProfessionalScheduleManagerAdvanced({
                       Este es tu horario base que se aplica por defecto. Puedes crear excepciones en "Horarios Personalizados"
                     </CardDescription>
                   </div>
-                  {enabledServices.length > 1 && (
-                    <div className="flex items-center gap-2">
-                      <Label className="text-sm">Copiar horario desde:</Label>
-                      <Select onValueChange={(fromServiceId) => copyScheduleFromService(fromServiceId, selectedService)}>
-                        <SelectTrigger className="w-48">
-                          <SelectValue placeholder="Seleccionar servicio" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {enabledServices
-                            .filter(service => service.id !== selectedService)
-                            .map(service => (
-                              <SelectItem key={service.id} value={service.id}>
-                                {service.categoryName}
-                              </SelectItem>
-                            ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">

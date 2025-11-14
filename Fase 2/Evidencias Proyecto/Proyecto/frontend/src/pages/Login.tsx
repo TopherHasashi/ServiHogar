@@ -1,9 +1,8 @@
-import { useNavigate, Navigate } from 'react-router-dom'
+import { Navigate } from 'react-router-dom'
 import UserAuth from '../components/user/UserAuth'
 import { useAuth } from '../lib/auth'
 
 export default function LoginPage() {
-  const navigate = useNavigate()
   const { user, loading } = useAuth()
 
   // Si ya hay sesión activa, salir inmediatamente de /login hacia el panel correspondiente
@@ -22,11 +21,7 @@ export default function LoginPage() {
     console.log('Usuario logueado:', user)
   }
 
-  const handleBack = () => {
-    navigate('/')
-  }
-
   return (
-    <UserAuth onLogin={handleLogin} onBack={handleBack} />
+    <UserAuth onLogin={handleLogin} />
   )
 }

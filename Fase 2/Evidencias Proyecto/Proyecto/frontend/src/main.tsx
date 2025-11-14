@@ -26,13 +26,27 @@ import { Toaster } from 'sonner'
 
 function Layout() {
   const navigate = useNavigate()
+  
+  const handleContactClick = () => {
+    // Si estamos en la página principal, hacer scroll al contacto
+    if (window.location.pathname === '/') {
+      const contactElement = document.getElementById('contacto')
+      if (contactElement) {
+        contactElement.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    } else {
+      // Si estamos en otra página, navegar a la página de contacto
+      navigate('/contacto')
+    }
+  }
+  
   return (
     <div className="min-h-screen flex flex-col">
       <Header
         onAllServicesClick={() => navigate('/servicios')}
         onHowItWorksClick={() => navigate('/como-funciona')}
         onReviewsClick={() => navigate('/resenas')}
-        onContactClick={() => navigate('/contacto')}
+        onContactClick={handleContactClick}
         onUserClick={() => navigate('/login')}
         onLogoClick={() => navigate('/')}
       />
@@ -55,6 +69,17 @@ function AuthenticatedLayout() {
   )
 }
 
+// Layout para páginas de autenticación (login/register) sin Header ni Footer
+function AuthLayout() {
+  return (
+    <div className="min-h-screen flex flex-col">
+      <main className="flex-1">
+        <Outlet />
+      </main>
+    </div>
+  )
+}
+
 const router = createBrowserRouter([
   {
     path: '/',
@@ -64,8 +89,6 @@ const router = createBrowserRouter([
       { path: 'servicios', element: <ServiciosPage /> },
       { path: 'como-funciona', element: <ComoFuncionaPage /> },
       { path: 'resenas', element: <ResenasPage /> },
-      { path: 'login', element: <LoginPage /> },
-      { path: 'register', element: <RegisterPage /> },
       { path: 'contacto', element: <ContactoPage /> },
       { path: 'terminos', element: <TerminosPage /> },
       { path: 'privacidad', element: <PrivacidadPage /> },
@@ -73,6 +96,14 @@ const router = createBrowserRouter([
       { path: 'payment/failure', element: <PaymentFailurePage /> },
       { path: 'payment/pending', element: <PaymentPendingPage /> },
       { path: '*', element: <NotFoundPage /> },
+    ],
+  },
+  {
+    path: '/',
+    element: <AuthLayout />,
+    children: [
+      { path: 'login', element: <LoginPage /> },
+      { path: 'register', element: <RegisterPage /> },
     ],
   },
   {

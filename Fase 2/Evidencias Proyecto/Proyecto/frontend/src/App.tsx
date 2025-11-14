@@ -5,8 +5,6 @@ import { useAuth } from './lib/auth'
 import Hero from './components/Hero.tsx'
 import Services from './components/Services'
 import Benefits from './components/Benefits'
-import HowItWorks from './components/HowItWorks'
-import CustomerReviews from './components/CustomerReviews'
 import Contact from './components/Contact'
 import './App.css'
 
@@ -42,10 +40,8 @@ function App() {
   return (
     <div>
       <Hero onAllServicesClick={() => navigate('/servicios')} onUserClick={() => navigate('/servicios')} />
-  <Services onServiceClick={() => navigate('/servicios')} />
-  <Benefits onUserClick={() => navigate('/servicios')} />
-  <HowItWorks />
-  <CustomerReviews />
+      <Services onServiceClick={() => navigate('/servicios')} />
+      <Benefits onUserClick={() => navigate('/servicios')} />
       <Contact />
       <div className="w-full px-4"><div className="py-6 text-sm text-gray-600">API status: {apiStatus}</div></div>
     </div>

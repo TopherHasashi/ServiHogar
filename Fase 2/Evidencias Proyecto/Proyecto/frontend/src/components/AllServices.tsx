@@ -7,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Badge } from "./ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "./ui/avatar"
 import { 
-  ArrowLeft, 
   Search, 
   MapPin, 
   Star,
@@ -17,11 +16,10 @@ import {
 import { apiGet } from "../lib/api"
 
 interface AllServicesProps {
-  onBack: () => void
   onServiceSelect: (professional: any) => void
 }
 
-export default function AllServices({ onBack, onServiceSelect }: AllServicesProps) {
+export default function AllServices({ onServiceSelect }: AllServicesProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedService, setSelectedService] = useState("")
   const [selectedRegion, setSelectedRegion] = useState("")
@@ -133,15 +131,7 @@ export default function AllServices({ onBack, onServiceSelect }: AllServicesProp
       {/* Header */}
       <div className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-14 sm:h-16">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <Button variant="ghost" onClick={onBack} className="flex items-center gap-1 sm:gap-2 text-sm sm:text-base p-2 sm:p-3">
-                <ArrowLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Volver al inicio</span>
-                <span className="sm:hidden">Volver</span>
-              </Button>
-            </div>
-            
+          <div className="flex justify-center items-center h-14 sm:h-16">
             <div className="flex items-center gap-2 sm:gap-3">
               <h1 className="text-base sm:text-xl truncate">Buscar Profesionales</h1>
               <Badge variant="outline" className="hidden sm:inline-flex">ServiHogar</Badge>

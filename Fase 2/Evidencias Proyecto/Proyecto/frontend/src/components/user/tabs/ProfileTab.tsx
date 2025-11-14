@@ -26,10 +26,13 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
   const { refreshUser } = useAuth()
   const [editingProfile, setEditingProfile] = useState(false)
   const [tempUserData, setTempUserData] = useState<any>({})
+  
   // Determinar estado profesional desde el rol efectivo cuando esté disponible
-  const isProfessional = (user?.effective_role
-    ? (user.effective_role === 'profesional' || user.effective_role === 'administrador')
-    : !!user?.isProfessional)
+  // Usar isProfessional como fallback si effective_role no es confiable
+  const isProfessional = user?.isProfessional || 
+    (user?.effective_role === 'profesional') || 
+    (user?.effective_role === 'administrador')
+    
   // Datos dinámicos de regiones/comunas
   const [regions, setRegions] = useState<Array<{ id: string; nombre: string; codigo?: string }>>([])
   const [communes, setCommunes] = useState<Array<{ id: string; nombre: string; codigo?: string; region_id?: string }>>([])
@@ -170,16 +173,18 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
         gender: tempUserData.gender,
         birth_date: tempUserData.birth_date,
       }
-      if (tempUserData.regionId) payload.region_id = tempUserData.regionId
-      if (tempUserData.communeId) payload.comuna_id = tempUserData.communeId
-  // Actualizar en backend (PUT)
-  await apiPutAuth('/api/auth/me/update/', payload)
+      // NO enviamos region_id ni comuna_id porque están deshabilitados para edición
+      // El backend mantendrá los valores existentes
+      
+      // Actualizar en backend (PUT)
+      await apiPutAuth('/api/auth/me/update/', payload)
+      
       // Refrescar sesión de usuario
       await refreshUser()
       onUpdateUser?.(payload)
       setEditingProfile(false)
       setTempUserData({})
-      alert('Perfil actualizado')
+      alert('Perfil actualizado correctamente')
     } catch (e: any) {
       alert(e?.message || 'Error desconocido')
     }
@@ -293,7 +298,7 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Región</Label>
-                <Select value={tempUserData.regionId || ""} onValueChange={handleRegionChange}>
+                <Select value={tempUserData.regionId || ""} onValueChange={handleRegionChange} disabled>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona una región" />
                   </SelectTrigger>
@@ -308,6 +313,9 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
                 {loadingRegions && (
                   <p className="text-xs text-gray-500">Cargando regiones...</p>
                 )}
+                <p className="text-xs text-amber-600">
+                  🔒 Para cambiar región/comuna, contacta con soporte
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Comuna</Label>
@@ -317,7 +325,7 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
                     const communeName = communes.find(c => c.id === communeId)?.nombre || ""
                     setTempUserData((prev: any) => ({ ...prev, communeId, commune: communeName }))
                   }}
-                  disabled={!tempUserData.regionId}
+                  disabled
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona una comuna" />
@@ -333,6 +341,9 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
                 {loadingCommunes && (
                   <p className="text-xs text-gray-500">Cargando comunas...</p>
                 )}
+                <p className="text-xs text-amber-600">
+                  🔒 Cambios afectan servicios e historial
+                </p>
               </div>
             </div>
 
