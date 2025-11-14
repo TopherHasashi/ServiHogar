@@ -1,8 +1,6 @@
 import { Card, CardContent } from "./ui/card"
-import { Button } from "./ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs"
 import { 
-  ArrowLeft, 
   Search, 
   Calendar, 
   UserCheck, 
@@ -16,11 +14,7 @@ import {
   Smartphone
 } from "lucide-react"
 
-interface HowItWorksProps {
-  onBack?: () => void
-}
-
-export default function HowItWorks({ onBack }: HowItWorksProps) {
+export default function HowItWorks() {
   const customerSteps = [
     {
       step: "1",
@@ -202,13 +196,8 @@ export default function HowItWorks({ onBack }: HowItWorksProps) {
       {/* Header */}
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          <Button variant="ghost" onClick={() => onBack?.()} className="mb-6">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Volver al inicio
-          </Button>
-          
           <div className="text-center">
-            <h1 className="text-4xl lg:text-6xl mb-4">Cómo Funciona Nuestra Plataforma</h1>
+            <h1 className="text-3xl lg:text-4xl mb-4">Cómo Funciona Nuestra Plataforma</h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
               Proceso 100% digital, seguro y transparente con profesionales verificados y pagos protegidos
             </p>

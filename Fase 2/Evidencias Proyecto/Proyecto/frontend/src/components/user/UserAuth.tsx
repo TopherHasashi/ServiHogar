@@ -17,7 +17,6 @@ import {
   MapPin, 
   Home,
   CheckCircle,
-  ArrowLeft,
   Calendar,
   Star,
   Shield
@@ -27,7 +26,6 @@ interface UserAuthProps {
   onLogin: (user: any) => void
   onAdminLogin?: () => void
   onVerifierLogin?: () => void
-  onBack: () => void
   initialTab?: 'login' | 'register'
 }
 
@@ -36,7 +34,7 @@ import { useNavigate } from "react-router-dom"
 import { useAuth } from "../../lib/auth"
 import { toast } from "sonner"
 
-export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps) {
+export default function UserAuth({ onLogin, initialTab }: UserAuthProps) {
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<'login' | 'register'>(initialTab ?? 'login')
   const [loginForm, setLoginForm] = useState({
@@ -325,16 +323,6 @@ export default function UserAuth({ onLogin, onBack, initialTab }: UserAuthProps)
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
-        {/* Back Button */}
-        <Button 
-          variant="ghost" 
-          onClick={onBack}
-          className="mb-6"
-        >
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Volver al inicio
-        </Button>
-
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="text-3xl mb-2">Portal de Usuarios</h1>

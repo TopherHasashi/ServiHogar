@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useSearchParams } from "react-router-dom"
 import { Button } from "../ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar"
@@ -21,13 +22,30 @@ interface UserDashboardProps {
 }
 
 export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
-  const [activeTab, setActiveTab] = useState("search")
+  const [searchParams, setSearchParams] = useSearchParams()
+  
+  // Leer el tab principal desde la URL, o usar "search" por defecto
+  const mainTabFromUrl = searchParams.get('mainTab') || 'search'
+  const [activeTab, setActiveTab] = useState(mainTabFromUrl)
+  
   // Estado de solicitud profesional: none | pending | rejected | approved
   const [professionalStatus, setProfessionalStatus] = useState<'none' | 'pending' | 'rejected' | 'approved'>('none')
   const [rejectionReason, setRejectionReason] = useState<string | null>(null)
 
   // Mis solicitudes reales (como cliente)
   const [serviceRequests, setServiceRequests] = useState<any[]>([])
+
+  // Función para cambiar de tab (actualiza estado y URL)
+  const handleTabChange = (newTab: string) => {
+    setActiveTab(newTab)
+    
+    // Si cambia a "professional", agregar por defecto el subtab "overview"
+    if (newTab === 'professional') {
+      setSearchParams({ mainTab: 'professional', subTab: 'overview' }, { replace: true })
+    } else {
+      setSearchParams({ mainTab: newTab }, { replace: true })
+    }
+  }
 
   // Datos simulados de solicitudes COMO PROFESIONAL (servicios que le han reservado)
   // Solo existen si el usuario ya es profesional
@@ -380,7 +398,7 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
 
       {/* Navigation Tabs */}
   <div className="w-full px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 sm:space-y-6">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-4 sm:space-y-6">
           <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
             <TabsTrigger value="search" className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 py-2 sm:py-3 text-xs sm:text-sm">
               <Search className="w-4 h-4" />

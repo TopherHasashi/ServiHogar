@@ -51,6 +51,10 @@ export default function ClientePage() {
     isProfessional: user.effective_role === 'profesional' || user.effective_role === 'administrador',
     // Preferir avatar tope (expuesto por /api/auth/me/) y luego el del perfil si existe
     avatar: (user as any)?.avatar || ((user as any)?.profile?.avatar_url) || "",
+    // Incluir dominio para acceder a id_comuna
+    dominio: (user as any)?.dominio,
+    // Incluir effective_role para determinar permisos
+    effective_role: user.effective_role,
   }
 
   return <UserDashboard user={unifiedUser} onLogout={logout} />

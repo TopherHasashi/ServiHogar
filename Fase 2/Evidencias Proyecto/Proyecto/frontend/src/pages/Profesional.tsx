@@ -33,6 +33,10 @@ export default function ProfesionalPage() {
     address: user.profile?.address || "",
     isProfessional: true,
     avatar: (user as any)?.avatar || ((user as any)?.profile?.avatar_url) || "",
+    // Incluir dominio para acceder a id_comuna
+    dominio: (user as any)?.dominio,
+    // Incluir effective_role para determinar permisos
+    effective_role: user.effective_role,
   }
 
   return <UserDashboard user={unifiedUser} onLogout={logout} />

@@ -740,6 +740,14 @@ def update_me(request):
 			with connection.cursor() as cur:
 				_rid, _cid = _resolve_region_comuna(cur, rn, cn)
 				final_comuna_id = str(_cid) if _cid else None
+	
+	# Si no se pudo resolver comuna_id, obtener el actual del dominio
+	if not final_comuna_id:
+		try:
+			dom = UsuarioDominio.objects.get(email=u.email)
+			final_comuna_id = dom.id_comuna
+		except UsuarioDominio.DoesNotExist:
+			pass
 
 	# Determinar RUT del usuario en dominio; si no existe, _upsert hará insert si hay RUT en Profile
 	rut = getattr(prof, 'rut', None)
@@ -763,7 +771,52 @@ def update_me(request):
 		return Response({"message": "Perfil actualizado en Django, pero no se pudo sincronizar con 'usuario' (dominio). Verifique RUT y comuna."}, status=status.HTTP_202_ACCEPTED)
 
 	# Responder con el mismo formato que /api/auth/me/
-	return me(request)
+	# No podemos llamar a me(request) directamente porque es una vista decorada
+	# Construimos la respuesta manualmente
+	Profile.objects.get_or_create(user=request.user)
+	data = UserSerializer(request.user).data
+	
+	# Adjuntar snapshot desde la tabla dominio `usuario`
+	try:
+		try:
+			dom = UsuarioDominio.objects.get(email=request.user.email)
+		except UsuarioDominio.DoesNotExist:
+			dom = UsuarioDominio.objects.get(rut=getattr(getattr(request.user, 'profile', None), 'rut', ''))
+		data["dominio"] = {
+			"nombres": dom.nombres,
+			"apellidos": dom.apellidos,
+			"rut": dom.rut,
+			"email": dom.email,
+			"telefono": dom.telefono,
+			"direccion": dom.direccion,
+			"genero": dom.genero,
+			"fecha_nacimiento": dom.fecha_nacimiento.isoformat() if dom.fecha_nacimiento else None,
+			"id_comuna": dom.id_comuna,
+			"rol": dom.rol,
+			"email_verificado": dom.email_verificado,
+			"perfil_publico": getattr(dom, 'perfil_publico', None),
+			"foto_perfil_url": getattr(dom, 'foto_perfil_url', None),
+		}
+		avatar = getattr(dom, 'foto_perfil_url', None)
+		if not avatar:
+			avatar = getattr(getattr(request.user, 'profile', None), 'avatar_url', None)
+		try:
+			if avatar and isinstance(avatar, str) and avatar.startswith('/'):
+				avatar = request.build_absolute_uri(avatar)
+		except Exception:
+			pass
+		data["avatar"] = avatar
+	except UsuarioDominio.DoesNotExist:
+		data["dominio"] = None
+		avatar = getattr(getattr(request.user, 'profile', None), 'avatar_url', None)
+		try:
+			if avatar and isinstance(avatar, str) and avatar.startswith('/'):
+				avatar = request.build_absolute_uri(avatar)
+		except Exception:
+			pass
+		data["avatar"] = avatar
+	
+	return Response(data)
 
 
 @api_view(["POST"])
@@ -1247,6 +1300,48 @@ def verify_service(request, servicio_id: str):
 					if rol_actual not in ('profesional', 'administrador', 'verificador'):
 						cur.execute("UPDATE usuario SET rol='profesional', actualizado_en=%s WHERE rut=%s", [now, rut_u])
 			except Exception:
+				pass
+			
+			# Crear horario predeterminado SOLO para el primer servicio del profesional
+			try:
+				import uuid
+				from datetime import time
+				
+				# Verificar si ya existe un horario para este servicio
+				cur.execute(
+					"SELECT COUNT(*) FROM horario_profesional WHERE id_servicio_profesional = %s",
+					[servicio_id]
+				)
+				count = cur.fetchone()[0]
+				
+				# Verificar cuántos servicios aprobados tiene este profesional
+				cur.execute(
+					"""
+					SELECT COUNT(*) FROM servicio_profesional 
+					WHERE rut_usuario = %s AND estado_verificacion = 'aprobado'
+					""",
+					[rut_u]
+				)
+				total_servicios_aprobados = cur.fetchone()[0]
+				
+				# Solo crear horario predeterminado si:
+				# 1. No existe horario para este servicio
+				# 2. Es el PRIMER servicio aprobado del profesional
+				if count == 0 and total_servicios_aprobados == 1:
+					# Crear horario para lunes (1) a viernes (5)
+					for dia in range(1, 6):  # 1=Lunes, 2=Martes, 3=Miércoles, 4=Jueves, 5=Viernes
+						cur.execute(
+							"""
+							INSERT INTO horario_profesional (
+								id_horario_profesional, id_servicio_profesional, dia_semana, 
+								hora_inicio, hora_fin, creado_en
+							) VALUES (%s, %s, %s, %s, %s, %s)
+							""",
+							[str(uuid.uuid4()), servicio_id, dia, time(8, 0), time(17, 0), now]
+						)
+			except Exception as e:
+				# Si falla la creación del horario, no afectar la aprobación del servicio
+				print(f"Error creando horario predeterminado: {e}")
 				pass
 		else:
 			cur.execute(

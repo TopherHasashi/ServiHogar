@@ -4,19 +4,13 @@ import AllServices from '../components/AllServices'
 export default function ServiciosPage() {
   const navigate = useNavigate()
 
-  const handleBack = () => {
-    navigate('/')
-  }
-
-  const handleServiceSelect = (professional: any) => {
-    // Navigate to service booking page or show service details
-    console.log('Selected professional:', professional)
-    // TODO: Implement navigation to booking page
+  const handleServiceSelect = () => {
+    // Redirigir al login cuando el usuario no ha iniciado sesión
+    navigate('/login')
   }
 
   return (
     <AllServices 
-      onBack={handleBack}
       onServiceSelect={handleServiceSelect}
     />
   )
