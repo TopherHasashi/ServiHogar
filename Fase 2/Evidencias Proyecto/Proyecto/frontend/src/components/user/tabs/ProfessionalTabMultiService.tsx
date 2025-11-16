@@ -85,6 +85,7 @@ export default function ProfessionalTabMultiService({
   const [showAddServiceForm, setShowAddServiceForm] = useState(false)
   const [editingProfile, setEditingProfile] = useState(false)
   const [editServiceForm, setEditServiceForm] = useState<any>({})
+  const [saveError, setSaveError] = useState<string | null>(null)
   const newExpInputRef = useRef<HTMLInputElement | null>(null)
 
   // Categorías de servicios disponibles
@@ -438,35 +439,88 @@ export default function ProfessionalTabMultiService({
     setEditingService(service.id)
   }
 
-  const handleSaveEditService = () => {
+  const handleSaveEditService = async () => {
     if (!userProfessionalProfile || !editingService) return
 
-    const updatedProfile = {
-      ...userProfessionalProfile,
-      services: userProfessionalProfile.services.map(service =>
-        service.id === editingService
-          ? {
-              ...service,
-              experience: editServiceForm.experience,
-              description: editServiceForm.description,
-              durationType: editServiceForm.durationType,
-              fixedDuration: editServiceForm.durationType === 'fixed' ? editServiceForm.fixedDuration : undefined,
-              minDuration: editServiceForm.durationType === 'range' ? editServiceForm.minDuration : undefined,
-              maxDuration: editServiceForm.durationType === 'range' ? editServiceForm.maxDuration : undefined,
-              priceFixed: editServiceForm.priceFixed
-            }
-          : service
-      )
-    }
+    try {
+      setSaveError(null) // Limpiar errores anteriores
+      
+      // Preparar datos para el backend
+      const updateData: any = {}
+      
+      if (editServiceForm.experience !== undefined) {
+        updateData.anos_experiencia = editServiceForm.experience
+      }
+      if (editServiceForm.description !== undefined) {
+        updateData.descripcion = editServiceForm.description
+      }
+      if (editServiceForm.durationType !== undefined) {
+        // Mapear de inglés a español para el backend
+        updateData.tipo_duracion = editServiceForm.durationType === 'fixed' ? 'fija' : 'rango'
+        
+        // Limpiar campos según el tipo de duración
+        if (editServiceForm.durationType === 'fixed') {
+          updateData.duracion_fija_minutos = editServiceForm.fixedDuration
+          // Limpiar campos de rango
+          updateData.duracion_minima_minutos = null
+          updateData.duracion_maxima_minutos = null
+        } else {
+          // Limpiar campo de duración fija
+          updateData.duracion_fija_minutos = null
+          updateData.duracion_minima_minutos = editServiceForm.minDuration
+          updateData.duracion_maxima_minutos = editServiceForm.maxDuration
+        }
+      } else {
+        // Si no se cambió el tipo, solo actualizar los valores modificados
+        if (editServiceForm.fixedDuration !== undefined) {
+          updateData.duracion_fija_minutos = editServiceForm.fixedDuration
+        }
+        if (editServiceForm.minDuration !== undefined) {
+          updateData.duracion_minima_minutos = editServiceForm.minDuration
+        }
+        if (editServiceForm.maxDuration !== undefined) {
+          updateData.duracion_maxima_minutos = editServiceForm.maxDuration
+        }
+      }
+      if (editServiceForm.priceFixed !== undefined) {
+        updateData.precio_fijo = editServiceForm.priceFixed
+      }
 
-    onUpdateProfessionalProfile(updatedProfile)
-    setEditingService(null)
-    setEditServiceForm({})
+      // Llamar al endpoint para guardar en el backend
+      await apiPutAuth(`/api/services/${editingService}/details/`, updateData)
+
+      // Actualizar el estado local
+      const updatedProfile = {
+        ...userProfessionalProfile,
+        services: userProfessionalProfile.services.map(service =>
+          service.id === editingService
+            ? {
+                ...service,
+                experience: editServiceForm.experience ?? service.experience,
+                description: editServiceForm.description ?? service.description,
+                durationType: editServiceForm.durationType ?? service.durationType,
+                fixedDuration: editServiceForm.durationType === 'fixed' ? editServiceForm.fixedDuration : service.fixedDuration,
+                minDuration: editServiceForm.durationType === 'range' ? editServiceForm.minDuration : service.minDuration,
+                maxDuration: editServiceForm.durationType === 'range' ? editServiceForm.maxDuration : service.maxDuration,
+                priceFixed: editServiceForm.priceFixed ?? service.priceFixed
+              }
+            : service
+        )
+      }
+
+      onUpdateProfessionalProfile(updatedProfile)
+      setEditingService(null)
+      setEditServiceForm({})
+    } catch (error: any) {
+      console.error('Error saving service:', error)
+      setSaveError(error?.response?.data?.message || error?.message || 'Error desconocido al guardar el servicio')
+    }
   }
 
   const handleCancelEditService = () => {
     setEditingService(null)
     setEditServiceForm({})
+    setSaveError(null)
   }
 
   const handleUpdateProfile = () => {
@@ -1356,6 +1410,21 @@ export default function ProfessionalTabMultiService({
                   {editingService === service.id ? (
                     /* Modo edición */
                     <div className="space-y-4">
+                      {saveError && (
+                        <Alert variant="destructive">
+                          <AlertDescription className="flex items-center justify-between">
+                            <span>{saveError}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setSaveError(null)}
+                              className="h-auto p-1 hover:bg-transparent"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </AlertDescription>
+                        </Alert>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <Label>Años de Experiencia</Label>

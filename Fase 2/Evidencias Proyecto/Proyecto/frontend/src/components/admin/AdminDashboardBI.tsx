@@ -2,7 +2,7 @@ import { useState, useEffect } from "react"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs"
-import { Badge } from "../ui/badge"
+// import { Badge } from "../ui/badge"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
 import { Label } from "../ui/label"
@@ -21,7 +21,7 @@ import {
   Star,
   BarChart3,
   LogOut,
-  Eye,
+  // Eye,
   Clock,
   UserCheck,
   Target,

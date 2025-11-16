@@ -28,6 +28,9 @@ from .views import (
     create_review,
     service_weekly_template,
     my_requests,
+    professional_stats,
+    update_service_price,
+    update_service_details,
 )
 from .payments import (
     create_booking_and_payment,
@@ -82,6 +85,7 @@ urlpatterns = [
     path("geo/comunas/", comunas, name="comunas"),
     path("categories/", categories, name="categories"),
     path("my/services/", my_services, name="my_services"),
+    path("professional/stats/", professional_stats, name="professional_stats"),
     # Scheduling
     path("schedule/<uuid:service_id>/", schedule_detail, name="schedule_detail"),
     path("schedule/<uuid:service_id>/block-conflicts/", schedule_block_conflicts, name="schedule_block_conflicts"),
@@ -95,6 +99,8 @@ urlpatterns = [
     path("requests/<uuid:request_id>/review/", create_review, name="create_review"),
     path("my/requests/", my_requests, name="my_requests"),
     path("services/<uuid:service_id>/visibility/", toggle_service_visibility, name="toggle_service_visibility"),
+    path("services/<uuid:service_id>/price/", update_service_price, name="update_service_price"),
+    path("services/<uuid:service_id>/details/", update_service_details, name="update_service_details"),
     # Payments
     path("payments/test-credentials/", test_mp_credentials, name="test_mp_credentials"),
     path("payments/book/<uuid:service_id>/", create_booking_and_payment, name="create_booking_and_payment"),

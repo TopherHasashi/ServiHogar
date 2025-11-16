@@ -1,6 +1,7 @@
 from rest_framework.decorators import api_view, permission_classes, parser_classes
 from rest_framework.response import Response
 from rest_framework import status, permissions, serializers as drf_serializers
+from rest_framework.permissions import IsAuthenticated
 from django.contrib.auth.models import User
 from .serializers import RegisterSerializer, UserSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -3403,3 +3404,353 @@ def my_requests(request):
 				})
 
 	return Response(results)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def professional_stats(request):
+	"""Obtiene estadísticas reales del profesional autenticado."""
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+
+	with connection.cursor() as cur:
+		# Obtener servicios activos con información completa
+		cur.execute(
+			"""
+			SELECT 
+				sp.id_servicio_profesional,
+				cs.nombre AS categoria,
+				sp.anos_experiencia,
+				sp.descripcion,
+				sp.tipo_duracion,
+				sp.duracion_fija_minutos,
+				sp.duracion_minima_minutos,
+				sp.duracion_maxima_minutos,
+				sp.precio_fijo,
+				sp.estado_verificacion,
+				sp.habilitado,
+				sp.disponible
+			FROM servicio_profesional sp
+			JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
+			WHERE sp.rut_usuario = %s AND sp.estado_verificacion = 'aprobado'
+			ORDER BY sp.creado_en DESC
+			""",
+			[dom.rut],
+		)
+		services_rows = cur.fetchall()
+		
+		services = []
+		for row in services_rows:
+			sid, cat, exp, desc, tipo_dur, dur_fija, dur_min, dur_max, precio, estado, habilitado, disponible = row
+			
+			# Formatear duración según tipo
+			if tipo_dur == 'fija':
+				duration_display = f"{dur_fija // 60}h" if dur_fija >= 60 else f"{dur_fija}min"
+			else:  # 'rango'
+				hours_min = dur_min // 60
+				hours_max = dur_max // 60
+				if hours_min == hours_max:
+					duration_display = f"{hours_min}h"
+				else:
+					duration_display = f"{hours_min}-{hours_max}h"
+			
+			services.append({
+				'id': str(sid),
+				'category': cat,
+				'experience': exp,
+				'description': desc,
+				'duration_type': tipo_dur,
+				'duration_display': duration_display,
+				'price': int(precio) if precio else 0,
+				'status': estado,
+				'enabled': habilitado,
+				'available': disponible,
+			})
+		
+		# Estadísticas de trabajos completados (esta semana)
+		cur.execute(
+			"""
+			SELECT COUNT(*) 
+			FROM solicitud_servicio s
+			WHERE s.rut_profesional = %s 
+			AND s.estado = 'completado'
+			AND s.fecha_programada >= CURRENT_DATE - INTERVAL '7 days'
+			""",
+			[dom.rut],
+		)
+		completed_jobs_week = cur.fetchone()[0] or 0
+		
+		# Ganancias de esta semana
+		cur.execute(
+			"""
+			SELECT COALESCE(SUM(s.precio_total), 0)
+			FROM solicitud_servicio s
+			WHERE s.rut_profesional = %s 
+			AND s.estado = 'completado'
+			AND s.fecha_programada >= CURRENT_DATE - INTERVAL '7 days'
+			""",
+			[dom.rut],
+		)
+		earnings_week = int(cur.fetchone()[0] or 0)
+		
+		# Calificación promedio real
+		cur.execute(
+			"""
+			SELECT 
+				COALESCE(ROUND(AVG((
+					COALESCE(r.calificacion_calidad, 0) + 
+					COALESCE(r.calificacion_puntualidad, 0) + 
+					COALESCE(r.calificacion_comunicacion, 0)
+				) / 3.0), 1), 0) AS promedio
+			FROM resena r
+			JOIN solicitud_servicio s ON s.id_solicitud_servicio = r.id_solicitud_servicio
+			WHERE s.rut_profesional = %s
+			""",
+			[dom.rut],
+		)
+		avg_rating = float(cur.fetchone()[0] or 0)
+		
+		# Total de trabajos completados (histórico)
+		cur.execute(
+			"""
+			SELECT COUNT(*) 
+			FROM solicitud_servicio s
+			WHERE s.rut_profesional = %s 
+			AND s.estado = 'completado'
+			""",
+			[dom.rut],
+		)
+		total_completed = cur.fetchone()[0] or 0
+		
+		# Total de trabajos (todos los estados)
+		cur.execute(
+			"""
+			SELECT COUNT(*) 
+			FROM solicitud_servicio s
+			WHERE s.rut_profesional = %s
+			""",
+			[dom.rut],
+		)
+		total_jobs = cur.fetchone()[0] or 0
+		
+		# Calcular tasa de éxito
+		success_rate = round((total_completed / total_jobs * 100) if total_jobs > 0 else 0, 0)
+
+	return Response({
+		'services': services,
+		'weekly_stats': {
+			'completed_jobs': completed_jobs_week,
+			'earnings': earnings_week,
+			'rating': avg_rating,
+		},
+		'overall_stats': {
+			'total_jobs': total_jobs,
+			'total_completed': total_completed,
+			'success_rate': success_rate,
+		}
+	})
+
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def update_service_price(request, service_id):
+	"""Permite al profesional actualizar el precio de su servicio."""
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+
+	new_price = request.data.get('precio')
+	
+	if new_price is None:
+		return Response({"message": "El campo 'precio' es requerido"}, status=status.HTTP_400_BAD_REQUEST)
+	
+	try:
+		new_price = int(new_price)
+		if new_price <= 0:
+			return Response({"message": "El precio debe ser mayor a cero. No puedes establecer un servicio gratuito."}, status=status.HTTP_400_BAD_REQUEST)
+	except (ValueError, TypeError):
+		return Response({"message": "El precio debe ser un número válido"}, status=status.HTTP_400_BAD_REQUEST)
+
+	with transaction.atomic():
+		with connection.cursor() as cur:
+			# Verificar que el servicio pertenece al profesional
+			cur.execute(
+				"""
+				SELECT sp.id_servicio_profesional, sp.estado_verificacion, cs.nombre
+				FROM servicio_profesional sp
+				JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
+				WHERE sp.id_servicio_profesional = %s AND sp.rut_usuario = %s
+				""",
+				[str(service_id), dom.rut]
+			)
+			row = cur.fetchone()
+			
+			if not row:
+				return Response(
+					{"message": "Servicio no encontrado o no tienes permiso para modificarlo"}, 
+					status=status.HTTP_404_NOT_FOUND
+				)
+			
+			service_id_db, estado, categoria = row
+			
+			# Verificar que el servicio esté aprobado
+			if estado != 'aprobado':
+				return Response(
+					{"message": f"Solo puedes cambiar el precio de servicios aprobados. Estado actual: {estado}"}, 
+					status=status.HTTP_400_BAD_REQUEST
+				)
+			
+			# Actualizar el precio
+			cur.execute(
+				"""
+				UPDATE servicio_profesional 
+				SET precio_fijo = %s
+				WHERE id_servicio_profesional = %s
+				""",
+				[new_price, str(service_id)]
+			)
+	
+	return Response({
+		"message": f"Precio del servicio '{categoria}' actualizado exitosamente",
+		"service_id": str(service_id),
+		"new_price": new_price
+	})
+
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def update_service_details(request, service_id):
+	"""Permite al profesional actualizar los detalles de su servicio."""
+	try:
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+	except UsuarioDominio.DoesNotExist:
+		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+
+	# Obtener datos del request
+	data = request.data
+	anos_experiencia = data.get('anos_experiencia')
+	descripcion = data.get('descripcion')
+	tipo_duracion = data.get('tipo_duracion')
+	duracion_fija_minutos = data.get('duracion_fija_minutos')
+	duracion_minima_minutos = data.get('duracion_minima_minutos')
+	duracion_maxima_minutos = data.get('duracion_maxima_minutos')
+	precio_fijo = data.get('precio_fijo')
+
+	# Validaciones
+	if anos_experiencia is not None:
+		try:
+			anos_experiencia = int(anos_experiencia)
+			if anos_experiencia < 0:
+				return Response({"message": "Los años de experiencia deben ser mayor o igual a cero"}, status=status.HTTP_400_BAD_REQUEST)
+		except (ValueError, TypeError):
+			return Response({"message": "Los años de experiencia deben ser un número válido"}, status=status.HTTP_400_BAD_REQUEST)
+
+	if precio_fijo is not None:
+		try:
+			precio_fijo = int(precio_fijo)
+			if precio_fijo <= 0:
+				return Response({"message": "El precio debe ser mayor a cero"}, status=status.HTTP_400_BAD_REQUEST)
+		except (ValueError, TypeError):
+			return Response({"message": "El precio debe ser un número válido"}, status=status.HTTP_400_BAD_REQUEST)
+
+	if tipo_duracion and tipo_duracion not in ['fija', 'rango']:
+		return Response({"message": "El tipo de duración debe ser 'fija' o 'rango'"}, status=status.HTTP_400_BAD_REQUEST)
+
+	if tipo_duracion == 'fija' and duracion_fija_minutos is not None:
+		try:
+			duracion_fija_minutos = int(duracion_fija_minutos)
+			if duracion_fija_minutos < 30 or duracion_fija_minutos > 720:
+				return Response({"message": "La duración fija debe estar entre 30 minutos y 12 horas"}, status=status.HTTP_400_BAD_REQUEST)
+		except (ValueError, TypeError):
+			return Response({"message": "La duración debe ser un número válido"}, status=status.HTTP_400_BAD_REQUEST)
+
+	if tipo_duracion == 'rango':
+		if duracion_minima_minutos is not None and duracion_maxima_minutos is not None:
+			try:
+				duracion_minima_minutos = int(duracion_minima_minutos)
+				duracion_maxima_minutos = int(duracion_maxima_minutos)
+				if duracion_minima_minutos < 30 or duracion_maxima_minutos > 720:
+					return Response({"message": "Las duraciones deben estar entre 30 minutos y 12 horas"}, status=status.HTTP_400_BAD_REQUEST)
+				if duracion_minima_minutos >= duracion_maxima_minutos:
+					return Response({"message": "La duración mínima debe ser menor que la máxima"}, status=status.HTTP_400_BAD_REQUEST)
+			except (ValueError, TypeError):
+				return Response({"message": "Las duraciones deben ser números válidos"}, status=status.HTTP_400_BAD_REQUEST)
+
+	with transaction.atomic():
+		with connection.cursor() as cur:
+			# Verificar que el servicio pertenece al profesional
+			cur.execute(
+				"""
+				SELECT sp.id_servicio_profesional, sp.estado_verificacion, cs.nombre
+				FROM servicio_profesional sp
+				JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
+				WHERE sp.id_servicio_profesional = %s AND sp.rut_usuario = %s
+				""",
+				[str(service_id), dom.rut]
+			)
+			row = cur.fetchone()
+			
+			if not row:
+				return Response(
+					{"message": "Servicio no encontrado o no tienes permiso para modificarlo"}, 
+					status=status.HTTP_404_NOT_FOUND
+				)
+			
+			service_id_db, estado, categoria = row
+			
+			# Verificar que el servicio esté aprobado
+			if estado != 'aprobado':
+				return Response(
+					{"message": f"Solo puedes modificar servicios aprobados. Estado actual: {estado}"}, 
+					status=status.HTTP_400_BAD_REQUEST
+				)
+			
+			# Construir UPDATE dinámico solo con los campos proporcionados
+			updates = []
+			params = []
+			
+			if anos_experiencia is not None:
+				updates.append("anos_experiencia = %s")
+				params.append(anos_experiencia)
+			
+			if descripcion is not None:
+				updates.append("descripcion = %s")
+				params.append(descripcion)
+			
+			if tipo_duracion is not None:
+				updates.append("tipo_duracion = %s")
+				params.append(tipo_duracion)
+			
+			if 'duracion_fija_minutos' in data:
+				updates.append("duracion_fija_minutos = %s")
+				params.append(duracion_fija_minutos)
+			
+			if 'duracion_minima_minutos' in data:
+				updates.append("duracion_minima_minutos = %s")
+				params.append(duracion_minima_minutos)
+			
+			if 'duracion_maxima_minutos' in data:
+				updates.append("duracion_maxima_minutos = %s")
+				params.append(duracion_maxima_minutos)
+			
+			if precio_fijo is not None:
+				updates.append("precio_fijo = %s")
+				params.append(precio_fijo)
+			
+			if not updates:
+				return Response({"message": "No se proporcionaron campos para actualizar"}, status=status.HTTP_400_BAD_REQUEST)
+			
+			# Agregar servicio_id al final de params
+			params.append(str(service_id))
+			
+			# Ejecutar UPDATE
+			sql = f"UPDATE servicio_profesional SET {', '.join(updates)} WHERE id_servicio_profesional = %s"
+			cur.execute(sql, params)
+	
+	return Response({
+		"message": f"Servicio '{categoria}' actualizado exitosamente",
+		"service_id": str(service_id)
+	})
