@@ -22,7 +22,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Copy,
-  Settings,
+  // Settings,
   Briefcase,
   X,
   Edit
@@ -106,6 +106,7 @@ export default function ProfessionalScheduleManagerAdvanced({
   const [viewMode, setViewMode] = useState<'calendar' | 'weekly' | 'custom-periods'>('weekly')
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [saveError, setSaveError] = useState<{ type: 'conflict' | 'validation' | 'generic', message: string } | null>(null)
   
   // Estados para horarios personalizados por período
   const [showPeriodForm, setShowPeriodForm] = useState(false)
@@ -425,9 +426,16 @@ export default function ProfessionalScheduleManagerAdvanced({
     const month = currentMonth.getMonth()
     const daysInMonth = new Date(year, month + 1, 0).getDate()
     
+    // Fecha de hoy sin hora para comparación
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
     for (let day = 1; day <= daysInMonth; day++) {
       const d = new Date(year, month, day)
-      if (!selectedService || !isBlocked(d, selectedService)) {
+      d.setHours(0, 0, 0, 0)
+      
+      // Solo agregar si no es día pasado, no está bloqueado
+      if (d >= today && (!selectedService || !isBlocked(d, selectedService))) {
         monthDates.push(d)
       }
     }
@@ -791,18 +799,19 @@ export default function ProfessionalScheduleManagerAdvanced({
     })
   }
 
-  // Copiar horario entre servicios
-  const copyScheduleFromService = (fromServiceId: string, toServiceId: string) => {
-    if (!serviceSchedules[fromServiceId] || !serviceSchedules[toServiceId]) return
+  // Copiar horario entre servicios - Reserved for future feature
+  // const copyScheduleFromService = (_fromServiceId: string, _toServiceId: string) => {
+  //   if (!serviceSchedules[_fromServiceId] || !serviceSchedules[_toServiceId]) return
+  //
+  //   setServiceSchedules(prev => ({
+  //     ...prev,
+  //     [_toServiceId]: {
+  //       ...prev[_toServiceId],
+  //       weeklyTemplate: { ...prev[_fromServiceId].weeklyTemplate }
+  //     }
+  //   }))
+  // }
 
-    setServiceSchedules(prev => ({
-      ...prev,
-      [toServiceId]: {
-        ...prev[toServiceId],
-        weeklyTemplate: { ...prev[fromServiceId].weeklyTemplate }
-      }
-    }))
-  }
 
   // Funciones para períodos personalizados
   const getDefaultWeeklySchedule = (): WeeklySchedule => ({
@@ -1004,10 +1013,36 @@ export default function ProfessionalScheduleManagerAdvanced({
       }
       setIsSaving(false)
       setSaveSuccess(true)
+      setSaveError(null)
       setTimeout(() => setSaveSuccess(false), 3000)
-    } catch (e) {
+    } catch (e: any) {
       setIsSaving(false)
       console.error('Save schedule failed', e)
+      
+      // Manejo específico de errores de conflicto de horarios
+      const errorMsg = e?.message || e?.response?.data?.message || String(e)
+      
+      // Detectar conflicto entre servicios (HTTP 409)
+      if (e?.response?.status === 409 || errorMsg.toLowerCase().includes('conflicto')) {
+        setSaveError({
+          type: 'conflict',
+          message: errorMsg
+        })
+      }
+      // Detectar otros errores de validación (HTTP 400)
+      else if (e?.response?.status === 400) {
+        setSaveError({
+          type: 'validation',
+          message: errorMsg
+        })
+      }
+      // Error genérico
+      else {
+        setSaveError({
+          type: 'generic',
+          message: errorMsg
+        })
+      }
     }
   }
 
@@ -1024,6 +1059,57 @@ export default function ProfessionalScheduleManagerAdvanced({
 
   return (
     <div className="space-y-6">
+      {/* Alertas de éxito y error */}
+      {saveSuccess && (
+        <Alert className="bg-green-50 border-green-200">
+          <CheckCircle className="h-4 w-4 text-green-600" />
+          <AlertDescription className="text-green-800">
+            ✅ Horarios guardados exitosamente
+          </AlertDescription>
+        </Alert>
+      )}
+      
+      {saveError && (
+        <Alert className="bg-red-50 border-red-200">
+          <AlertCircle className="h-4 w-4 text-red-600" />
+          <AlertDescription className="text-red-800">
+            <div className="space-y-2">
+              <div className="font-semibold">
+                {saveError.type === 'conflict' && '⚠️ Conflicto de Horarios'}
+                {saveError.type === 'validation' && '❌ Error de Validación'}
+                {saveError.type === 'generic' && '❌ Error al Guardar'}
+              </div>
+              <div className="text-sm">
+                {saveError.message}
+              </div>
+              {saveError.type === 'conflict' && (
+                <div className="text-sm mt-2 pt-2 border-t border-red-300">
+                  💡 <strong>Consejo:</strong> Revisa los horarios de tus otros servicios para evitar solapamientos.
+                </div>
+              )}
+              {saveError.type === 'validation' && (
+                <div className="text-sm mt-2 pt-2 border-t border-red-300">
+                  <strong>Verifica que:</strong>
+                  <ul className="list-disc list-inside mt-1 space-y-1">
+                    <li>Los horarios no se solapen en el mismo día</li>
+                    <li>Cada franja tenga al menos 30 minutos</li>
+                    <li>Las horas sean válidas (HH:MM)</li>
+                  </ul>
+                </div>
+              )}
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-2"
+                onClick={() => setSaveError(null)}
+              >
+                Cerrar
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+      
       {/* Header con selector de servicio */}
       <Card>
         <CardHeader>
@@ -1101,7 +1187,7 @@ export default function ProfessionalScheduleManagerAdvanced({
               </CardHeader>
               <CardContent>
                 {/* Explicación del sistema */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3">
                   <h4 className="font-medium text-blue-900 mb-2">¿Cómo funciona tu agenda?</h4>
                   <ul className="text-sm text-blue-800 space-y-1">
                     <li>• <strong>Por defecto estás disponible</strong> según tu plantilla semanal</li>
@@ -1111,7 +1197,7 @@ export default function ProfessionalScheduleManagerAdvanced({
                 </div>
 
                 {/* Controles de no disponibilidad */}
-                <div className="space-y-4 mb-6">
+                <div className="space-y-3 mb-3">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label>Razón de no disponibilidad (opcional)</Label>
@@ -1132,11 +1218,12 @@ export default function ProfessionalScheduleManagerAdvanced({
                       </Button>
                     </div>
                   </div>
+                </div>
 
-                  {/* Botones de selección rápida */}
-                  <div className="border rounded-lg p-4 bg-gray-50">
-                    <Label className="text-sm font-medium mb-3 block">Selección Rápida</Label>
-                    <div className="space-y-3">
+                {/* Botones de selección rápida */}
+                <div className="border rounded-lg p-3 bg-gray-50 mb-3">
+                  <Label className="text-sm font-medium mb-2 block">Selección Rápida</Label>
+                  <div className="space-y-2">
                       <div className="flex flex-wrap gap-2">
                         <Button
                           variant="outline"
@@ -1172,7 +1259,6 @@ export default function ProfessionalScheduleManagerAdvanced({
                       </div>
                     </div>
                   </div>
-                </div>
 
                 {/* Calendario */}
                 <div className="border rounded-lg p-4 pl-16 relative">

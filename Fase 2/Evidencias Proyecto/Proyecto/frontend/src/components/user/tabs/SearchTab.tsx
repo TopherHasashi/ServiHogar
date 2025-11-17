@@ -7,12 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Badge } from "../../ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "../../ui/avatar"
 import ServiceBooking from "../ServiceBooking"
-import { apiGet } from "../../../lib/api"
+import { apiGet, apiGetAuth } from "../../../lib/api"
 import { 
   Search, 
   MapPin, 
   Star,
   Filter,
+  ChevronLeft,
+  ChevronRight,
   CheckCircle
 } from "lucide-react"
 
@@ -40,6 +42,8 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
   const [communes, setCommunes] = useState<Array<{ id: string; nombre: string; codigo?: string }>>([])
   const [loadingRegions, setLoadingRegions] = useState<boolean>(false)
   const [loadingCommunes, setLoadingCommunes] = useState<boolean>(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
 
   // Mapeo nombre de servicio -> slug de categoría usado por el backend
   const serviceNameToSlug: Record<string, string> = useMemo(() => ({
@@ -47,6 +51,39 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
     "Limpieza del Hogar": "limpieza",
     "Jardinería": "jardineria",
   }), [])
+
+  // Inicializar región y comuna cuando el usuario esté disponible
+  useEffect(() => {
+    // Intentar obtener región y comuna desde el dominio del usuario
+    const comunaId = user?.dominio?.id_comuna
+    
+    if (comunaId) {
+      // Si el usuario tiene comuna en dominio, obtener su información y región
+      apiGet(`/api/geo/comunas/?comuna_id=${encodeURIComponent(comunaId)}`)
+        .then((data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            const comuna = data[0]
+            const regionId = comuna.region_id || comuna.id_region
+            
+            if (regionId) {
+              setSelectedRegion(String(regionId))
+              setSelectedCommune(String(comunaId))
+              
+              // Cargar comunas de la región
+              setLoadingCommunes(true)
+              apiGet(`/api/geo/comunas/?region_id=${encodeURIComponent(regionId)}`)
+                .then((comunasData) => {
+                  const comunasList = Array.isArray(comunasData) ? comunasData : []
+                  setCommunes(comunasList.map((c: any) => ({ id: String(c.id), nombre: c.nombre, codigo: c.codigo })))
+                })
+                .catch(() => {})
+                .finally(() => setLoadingCommunes(false))
+            }
+          }
+        })
+        .catch(() => {})
+    }
+  }, [user])
 
   // Cargar regiones al montar
   useEffect(() => {
@@ -57,6 +94,19 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
         if (ignore) return
         const list = Array.isArray(data) ? data : []
         setRegions(list.map((r: any) => ({ id: String(r.id), nombre: r.nombre, codigo: r.codigo })))
+        
+        // Si el usuario tiene región preseleccionada, cargar sus comunas
+        if (user?.profile?.region) {
+          setLoadingCommunes(true)
+          apiGet(`/api/geo/comunas/?region_id=${encodeURIComponent(user.profile.region)}`)
+            .then((comunasData) => {
+              if (ignore) return
+              const comunasList = Array.isArray(comunasData) ? comunasData : []
+              setCommunes(comunasList.map((c: any) => ({ id: String(c.id), nombre: c.nombre, codigo: c.codigo })))
+            })
+            .catch(() => {})
+            .finally(() => { if (!ignore) setLoadingCommunes(false) })
+        }
       })
       .catch(() => {})
       .finally(() => { if (!ignore) setLoadingRegions(false) })
@@ -120,9 +170,10 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
 
         const qs = params.toString()
         const path = `/api/services/search/${qs ? `?${qs}` : ''}`
-        const data = await apiGet(path)
+        const data = await apiGetAuth(path)
         if (ignore) return
         setItems(Array.isArray(data) ? data : [])
+        setCurrentPage(1) // Resetear a la primera página cuando cambien los filtros
       } catch (e: any) {
         if (ignore) return
         if (e?.name !== 'AbortError') setError(e?.message || 'No se pudieron cargar los servicios')
@@ -138,6 +189,35 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
       clearTimeout(timeout)
     }
   }, [searchQuery, selectedService, selectedRegion, selectedCommune, priceRange, serviceNameToSlug])
+
+  // Calcular items paginados
+  const totalPages = Math.ceil(items.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedItems = items.slice(startIndex, endIndex)
+
+  // Generar array de números de página para mostrar
+  const getPageNumbers = () => {
+    const pages = []
+    const maxVisible = 5 // Máximo de números de página visibles
+    
+    if (totalPages <= maxVisible) {
+      // Mostrar todas las páginas si son pocas
+      for (let i = 1; i <= totalPages; i++) {
+        pages.push(i)
+      }
+    } else {
+      // Lógica para mostrar páginas con puntos suspensivos
+      if (currentPage <= 3) {
+        pages.push(1, 2, 3, 4, '...', totalPages)
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1, '...', totalPages - 3, totalPages - 2, totalPages - 1, totalPages)
+      } else {
+        pages.push(1, '...', currentPage - 1, currentPage, currentPage + 1, '...', totalPages)
+      }
+    }
+    return pages
+  }
 
   // Función para convertir minutos a formato de horas
   const formatDuration = (minutes: number) => {
@@ -509,6 +589,49 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
                   </Card>
                 ))}
               </div>
+
+              {/* Paginación */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-center gap-2 mt-6">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  
+                  <div className="flex gap-1">
+                    {getPageNumbers().map((page, idx) => (
+                      typeof page === 'number' ? (
+                        <Button
+                          key={idx}
+                          variant={currentPage === page ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setCurrentPage(page)}
+                          className="min-w-[40px]"
+                        >
+                          {page}
+                        </Button>
+                      ) : (
+                        <span key={idx} className="flex items-center px-2 text-gray-400">
+                          {page}
+                        </span>
+                      )
+                    ))}
+                  </div>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           )}
         </div>
