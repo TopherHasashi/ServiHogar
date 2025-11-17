@@ -499,9 +499,17 @@ export default function ProfessionalTabMultiService({
                 experience: editServiceForm.experience ?? service.experience,
                 description: editServiceForm.description ?? service.description,
                 durationType: editServiceForm.durationType ?? service.durationType,
-                fixedDuration: editServiceForm.durationType === 'fixed' ? editServiceForm.fixedDuration : service.fixedDuration,
-                minDuration: editServiceForm.durationType === 'range' ? editServiceForm.minDuration : service.minDuration,
-                maxDuration: editServiceForm.durationType === 'range' ? editServiceForm.maxDuration : service.maxDuration,
+                // Si cambiamos a 'fixed', usar el valor editado o mantener el original, y limpiar rangos
+                fixedDuration: editServiceForm.durationType === 'fixed' 
+                  ? (editServiceForm.fixedDuration ?? service.fixedDuration) 
+                  : (editServiceForm.durationType === 'range' ? 0 : service.fixedDuration),
+                // Si cambiamos a 'range', usar los valores editados o mantener originales, y limpiar fijo
+                minDuration: editServiceForm.durationType === 'range' 
+                  ? (editServiceForm.minDuration ?? service.minDuration) 
+                  : (editServiceForm.durationType === 'fixed' ? 0 : service.minDuration),
+                maxDuration: editServiceForm.durationType === 'range' 
+                  ? (editServiceForm.maxDuration ?? service.maxDuration) 
+                  : (editServiceForm.durationType === 'fixed' ? 0 : service.maxDuration),
                 priceFixed: editServiceForm.priceFixed ?? service.priceFixed
               }
             : service

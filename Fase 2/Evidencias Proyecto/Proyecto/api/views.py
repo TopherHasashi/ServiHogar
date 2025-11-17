@@ -2298,6 +2298,44 @@ def services_search(request):
 	min_price = _to_int(request.query_params.get('min_price'))
 	max_price = _to_int(request.query_params.get('max_price'))
 
+	# Obtener RUT del usuario autenticado para excluir sus propios servicios
+	# Como este endpoint es público, debemos verificar manualmente el token JWT
+	current_user_rut = None
+	current_user_email = None
+	
+	# Intentar obtener el token del header Authorization
+	auth_header = request.headers.get('Authorization', '')
+	if auth_header.startswith('Bearer '):
+		token = auth_header.split(' ')[1]
+		try:
+			from rest_framework_simplejwt.tokens import AccessToken
+			# Validar y decodificar el token
+			access_token = AccessToken(token)
+			user_id = access_token['user_id']
+			# Obtener el usuario de Django
+			from django.contrib.auth import get_user_model
+			User = get_user_model()
+			user = User.objects.get(id=user_id)
+			current_user_email = user.email
+			# Obtener el RUT desde UsuarioDominio
+			dom = UsuarioDominio.objects.get(email=current_user_email)
+			current_user_rut = dom.rut
+			print(f"[DEBUG services_search] Token JWT válido - Usuario: {current_user_email}, RUT: {current_user_rut}")
+		except Exception as e:
+			print(f"[DEBUG services_search] Error al procesar token JWT: {str(e)}")
+	
+	# Fallback: si el usuario está autenticado por sesión (aunque no debería ocurrir)
+	if not current_user_rut and request.user and request.user.is_authenticated:
+		try:
+			dom = UsuarioDominio.objects.get(email=request.user.email)
+			current_user_rut = dom.rut
+			print(f"[DEBUG services_search] Usuario autenticado por sesión: {request.user.email}, RUT: {current_user_rut}")
+		except UsuarioDominio.DoesNotExist:
+			print(f"[DEBUG services_search] Usuario autenticado pero sin registro en UsuarioDominio: {request.user.email}")
+	
+	if not current_user_rut:
+		print(f"[DEBUG services_search] Usuario no autenticado o sin RUT válido")
+
 	# Construir SQL dinámico de forma segura
 	sql = [
 		"""
@@ -2323,6 +2361,12 @@ def services_search(request):
 		"""
 	]
 	params: list = []
+
+	# Excluir los servicios del propio usuario
+	if current_user_rut:
+		sql.append("AND sp.rut_usuario != %s")
+		params.append(current_user_rut)
+		print(f"[DEBUG services_search] Excluyendo servicios del RUT: {current_user_rut}")
 
 	if category_slug:
 	  	# igualar por slug calculado o por nombre sin acentos
@@ -3461,7 +3505,10 @@ def professional_stats(request):
 				'category': cat,
 				'experience': exp,
 				'description': desc,
-				'duration_type': tipo_dur,
+				'durationType': 'fixed' if tipo_dur == 'fija' else 'range',  # Mapear a inglés
+				'fixedDuration': int(dur_fija) if dur_fija else 0,
+				'minDuration': int(dur_min) if dur_min else 0,
+				'maxDuration': int(dur_max) if dur_max else 0,
 				'duration_display': duration_display,
 				'price': int(precio) if precio else 0,
 				'status': estado,
