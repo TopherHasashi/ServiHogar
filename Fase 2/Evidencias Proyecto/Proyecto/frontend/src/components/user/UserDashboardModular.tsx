@@ -205,10 +205,10 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
           categoryName: s.categoria,
           experience: s.anos_experiencia,
           description: s.descripcion,
-          durationType: s.tipo_duracion,
-          fixedDuration: s.duracion_fija_minutos,
-          minDuration: s.duracion_minima_minutos,
-          maxDuration: s.duracion_maxima_minutos,
+          durationType: s.tipo_duracion === 'fija' ? 'fixed' : 'range',  // Mapear a inglés
+          fixedDuration: s.duracion_fija_minutos || 0,
+          minDuration: s.duracion_minima_minutos || 0,
+          maxDuration: s.duracion_maxima_minutos || 0,
           priceFixed: s.precio_fijo,
           // Visibilidad en buscador controlada por backend; si no viene, fallback a aprobado
           isActive: (typeof s.visible === 'boolean') ? !!s.visible : (s.estado_verificacion === 'aprobado'),

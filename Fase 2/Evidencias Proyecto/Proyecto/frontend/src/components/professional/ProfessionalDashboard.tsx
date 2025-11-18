@@ -4,6 +4,8 @@ import { Badge } from "../ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs"
 import { Progress } from "../ui/progress"
+import { Alert, AlertDescription } from "../ui/alert"
+import { Input } from "../ui/input"
 import { 
   Star, 
   Calendar, 
@@ -18,15 +20,115 @@ import {
   Bell,
   LogOut,
   Eye,
-  MessageCircle
+  MessageCircle,
+  Loader2,
+  Edit,
+  X,
+  Save
 } from "lucide-react"
+import { useState, useEffect } from "react"
+import { apiGetAuth, apiPutAuth } from "../../lib/api"
 
 interface ProfessionalDashboardProps {
   professional: any
   onLogout: () => void
 }
 
+interface ServiceInfo {
+  id: string
+  category: string
+  experience: number
+  description: string
+  duration_type: 'fija' | 'rango'
+  duration_display: string
+  price: number
+  status: string
+  enabled: boolean
+  available: boolean
+}
+
+interface ProfessionalStats {
+  services: ServiceInfo[]
+  weekly_stats: {
+    completed_jobs: number
+    earnings: number
+    rating: number
+  }
+  overall_stats: {
+    total_jobs: number
+    total_completed: number
+    success_rate: number
+  }
+}
+
 export default function ProfessionalDashboard({ professional, onLogout }: ProfessionalDashboardProps) {
+  const [stats, setStats] = useState<ProfessionalStats | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [editingPrice, setEditingPrice] = useState<string | null>(null)
+  const [newPrice, setNewPrice] = useState<string>("")
+  const [savingPrice, setSavingPrice] = useState(false)
+  const [priceError, setPriceError] = useState<string | null>(null)
+  
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const response = await apiGetAuth('/api/professional/stats/')
+        setStats(response)
+      } catch (error) {
+        console.error('Error loading professional stats:', error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadStats()
+  }, [])
+
+  const handleEditPrice = (serviceId: string, currentPrice: number) => {
+    setEditingPrice(serviceId)
+    setNewPrice(currentPrice.toString())
+    setPriceError(null)
+  }
+
+  const handleCancelEdit = () => {
+    setEditingPrice(null)
+    setNewPrice("")
+    setPriceError(null)
+  }
+
+  const handleSavePrice = async (serviceId: string) => {
+    const priceValue = parseInt(newPrice)
+    
+    if (isNaN(priceValue) || priceValue <= 0) {
+      setPriceError("El precio debe ser mayor a cero. No puedes establecer un servicio gratuito.")
+      return
+    }
+
+    setSavingPrice(true)
+    setPriceError(null)
+
+    try {
+      await apiPutAuth(`/api/services/${serviceId}/price/`, { precio: priceValue })
+      
+      // Actualizar el estado local
+      if (stats) {
+        setStats({
+          ...stats,
+          services: stats.services.map(s => 
+            s.id === serviceId ? { ...s, price: priceValue } : s
+          )
+        })
+      }
+      
+      setEditingPrice(null)
+      setNewPrice("")
+    } catch (error: any) {
+      const errorMsg = error?.message || error?.response?.data?.message || "Error al actualizar el precio"
+      setPriceError(errorMsg)
+    } finally {
+      setSavingPrice(false)
+    }
+  }
+  
   const todayJobs = [
     {
       id: "JOB-001",
@@ -60,13 +162,6 @@ export default function ProfessionalDashboard({ professional, onLogout }: Profes
     }
   ]
 
-  const weeklyStats = {
-    completedJobs: 12,
-    earnings: 520000,
-    rating: 4.8,
-    responseTime: "8 min"
-  }
-
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "pending":
@@ -87,6 +182,17 @@ export default function ProfessionalDashboard({ professional, onLogout }: Profes
       <Badge variant="destructive" className="text-xs">Urgente</Badge>
     ) : (
       <Badge variant="outline" className="text-xs">Normal</Badge>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600">Cargando estadísticas...</p>
+        </div>
+      </div>
     )
   }
 
@@ -125,8 +231,9 @@ export default function ProfessionalDashboard({ professional, onLogout }: Profes
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs defaultValue="today" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:grid-cols-5">
             <TabsTrigger value="today">Hoy</TabsTrigger>
+            <TabsTrigger value="services">Mis Servicios</TabsTrigger>
             <TabsTrigger value="schedule">Agenda</TabsTrigger>
             <TabsTrigger value="earnings">Ganancias</TabsTrigger>
             <TabsTrigger value="profile">Perfil</TabsTrigger>
@@ -294,27 +401,158 @@ export default function ProfessionalDashboard({ professional, onLogout }: Profes
                   <CardTitle>Resumen Semanal</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Trabajos Completados</span>
-                      <span className="font-medium">{weeklyStats.completedJobs}</span>
+                  {stats ? (
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Trabajos Completados</span>
+                        <span className="font-medium">{stats.weekly_stats.completed_jobs}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Ganancias</span>
+                        <span className="font-medium text-green-600">
+                          ${stats.weekly_stats.earnings.toLocaleString('es-CL')}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Calificación Promedio</span>
+                        <span className="font-medium flex items-center gap-1">
+                          {stats.weekly_stats.rating > 0 ? (
+                            <>
+                              {stats.weekly_stats.rating.toFixed(1)}
+                              <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                            </>
+                          ) : (
+                            'Sin calificaciones'
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm">Servicios Activos</span>
+                        <span className="font-medium">{stats.services.filter(s => s.enabled && s.available).length}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Ganancias</span>
-                      <span className="font-medium text-green-600">${weeklyStats.earnings.toLocaleString('es-CL')}</span>
+                  ) : (
+                    <div className="text-center py-4 text-gray-500">
+                      <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                      <p className="text-sm">No se pudieron cargar las estadísticas</p>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Calificación Promedio</span>
-                      <span className="font-medium">{weeklyStats.rating}★</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm">Tiempo de Respuesta</span>
-                      <span className="font-medium">{weeklyStats.responseTime}</span>
-                    </div>
-                  </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="services">
+            <Card>
+              <CardHeader>
+                <CardTitle>Mis Servicios Profesionales</CardTitle>
+                <CardDescription>
+                  Servicios que ofreces con información de duración y calificación
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {stats && stats.services.length > 0 ? (
+                  <div className="space-y-4">
+                    {stats.services.map((service) => (
+                      <div key={service.id} className="border rounded-lg p-4 hover:bg-gray-50 transition-colors">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="text-lg font-semibold">{service.category}</h3>
+                              {service.enabled && service.available ? (
+                                <Badge className="bg-green-100 text-green-800">Activo</Badge>
+                              ) : (
+                                <Badge variant="secondary">Inactivo</Badge>
+                              )}
+                              <Badge variant="outline">{service.status}</Badge>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-3">{service.description || 'Sin descripción'}</p>
+                            
+                            <div className="grid grid-cols-3 gap-4">
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">Duración</p>
+                                <div className="flex items-center gap-1">
+                                  <Clock className="w-4 h-4 text-blue-600" />
+                                  <span className="text-sm font-medium">{service.duration_display}</span>
+                                </div>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">Experiencia</p>
+                                <span className="text-sm font-medium">{service.experience} años</span>
+                              </div>
+                              <div>
+                                <p className="text-xs text-gray-500 mb-1">Precio</p>
+                                {editingPrice === service.id ? (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <Input
+                                        type="number"
+                                        value={newPrice}
+                                        onChange={(e) => setNewPrice(e.target.value)}
+                                        className="w-32 h-8"
+                                        placeholder="Precio"
+                                        disabled={savingPrice}
+                                      />
+                                      <Button
+                                        size="sm"
+                                        onClick={() => handleSavePrice(service.id)}
+                                        disabled={savingPrice}
+                                        className="h-8 px-2"
+                                      >
+                                        {savingPrice ? (
+                                          <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : (
+                                          <Save className="w-4 h-4" />
+                                        )}
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={handleCancelEdit}
+                                        disabled={savingPrice}
+                                        className="h-8 px-2"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                    {priceError && (
+                                      <p className="text-xs text-red-600">{priceError}</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-sm font-medium text-green-600">
+                                      ${service.price.toLocaleString('es-CL')}
+                                    </span>
+                                    {service.status === 'aprobado' && (
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => handleEditPrice(service.id, service.price)}
+                                        className="h-6 px-2"
+                                      >
+                                        <Edit className="w-3 h-3" />
+                                      </Button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      No tienes servicios registrados aún. Aplica para ofrecer servicios profesionales.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="schedule">
@@ -415,8 +653,12 @@ export default function ProfessionalDashboard({ professional, onLogout }: Profes
                           <h3 className="text-xl">{professional.name}</h3>
                           <p className="text-gray-600">{professional.specialty}</p>
                           <div className="flex items-center gap-2 mt-2">
-                            <Star className="w-4 h-4 text-yellow-500" />
-                            <span>{professional.rating}</span>
+                            <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                            <span>
+                              {stats && stats.weekly_stats.rating > 0 
+                                ? stats.weekly_stats.rating.toFixed(1) 
+                                : 'Sin calificaciones'}
+                            </span>
                             <Badge variant="secondary" className="bg-green-100 text-green-800">
                               Verificado
                             </Badge>
@@ -453,16 +695,22 @@ export default function ProfessionalDashboard({ professional, onLogout }: Profes
 
                       <div>
                         <h4 className="font-medium mb-2">Estadísticas</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="text-center p-3 border rounded">
-                            <div className="text-lg">156</div>
-                            <div className="text-xs text-gray-500">Trabajos</div>
+                        {stats ? (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="text-center p-3 border rounded">
+                              <div className="text-lg font-semibold">{stats.overall_stats.total_completed}</div>
+                              <div className="text-xs text-gray-500">Trabajos Completados</div>
+                            </div>
+                            <div className="text-center p-3 border rounded">
+                              <div className="text-lg font-semibold">{stats.overall_stats.success_rate}%</div>
+                              <div className="text-xs text-gray-500">Tasa de Éxito</div>
+                            </div>
                           </div>
-                          <div className="text-center p-3 border rounded">
-                            <div className="text-lg">98%</div>
-                            <div className="text-xs text-gray-500">Éxito</div>
+                        ) : (
+                          <div className="text-center p-3 border rounded text-gray-500">
+                            <p className="text-sm">Cargando...</p>
                           </div>
-                        </div>
+                        )}
                       </div>
 
                       <Button className="w-full">
