@@ -12,6 +12,7 @@ import { Badge } from "../../ui/badge"
 import { Alert, AlertDescription } from "../../ui/alert"
 import { Switch } from "../../ui/switch"
 import ProfessionalScheduleManagerAdvanced from "../ProfessionalScheduleManagerAdvanced"
+import ProfessionalBankAccounts from "../ProfessionalBankAccounts"
 import { Separator } from "../../ui/separator"
 import { 
   Briefcase,
@@ -937,107 +938,55 @@ export default function ProfessionalTabMultiService({
   return (
     <div className="space-y-6">
       <Tabs value={professionalTab} onValueChange={handleTabChange}>
-        <TabsList className="grid w-full grid-cols-3">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">Resumen</TabsTrigger>
           <TabsTrigger value="services">Servicios</TabsTrigger>
           <TabsTrigger value="schedule">Horarios</TabsTrigger>
+          <TabsTrigger value="bankAccounts">Cuentas</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
           {/* Perfil General */}
           <Card>
             <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="flex items-center gap-2">
-                    <Briefcase className="w-5 h-5" />
-                    Perfil Profesional
-                  </CardTitle>
-                  <CardDescription>
-                    Información general de tu perfil como profesional
-                  </CardDescription>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditingProfile(!editingProfile)}
-                >
-                  <Edit className="w-4 h-4 mr-2" />
-                  Editar
-                </Button>
-              </div>
+              <CardTitle className="flex items-center gap-2">
+                <Briefcase className="w-5 h-5" />
+                Perfil Profesional
+              </CardTitle>
+              <CardDescription>
+                Información general de tu perfil como profesional
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {editingProfile ? (
-                <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="space-y-3">
                   <div>
-                    <Label>Descripción General</Label>
-                    <Textarea
-                      value={profileForm.generalDescription}
-                      onChange={(e) => setProfileForm(prev => ({
-                        ...prev,
-                        generalDescription: e.target.value
-                      }))}
-                    />
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Switch
-                      checked={profileForm.acceptsNewJobs}
-                      onCheckedChange={(checked) => setProfileForm(prev => ({
-                        ...prev,
-                        acceptsNewJobs: checked
-                      }))}
-                    />
-                    <Label>Acepto nuevos trabajos</Label>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button onClick={handleUpdateProfile}>
-                      <Save className="w-4 h-4 mr-2" />
-                      Guardar
-                    </Button>
-                    <Button variant="outline" onClick={() => setEditingProfile(false)}>
-                      <X className="w-4 h-4 mr-2" />
-                      Cancelar
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-sm text-gray-500">Estado General:</span>
-                      <div className="mt-1">
-                        {getVerificationStatusBadge(userProfessionalProfile.generalVerificationStatus)}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-sm text-gray-500">Descripción:</span>
-                      <p className="text-sm">{userProfessionalProfile.generalDescription}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm text-gray-500">Acepta Nuevos Trabajos:</span>
-                      <p className="text-sm">{userProfessionalProfile.acceptsNewJobs ? "Sí" : "No"}</p>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-sm text-gray-500">Calificación Promedio:</span>
-                      <div className="flex items-center gap-1 mt-1">
-                        <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="font-semibold">{userProfessionalProfile.averageRating.toFixed(1)}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-sm text-gray-500">Trabajos Completados:</span>
-                      <p className="font-semibold">{userProfessionalProfile.totalJobs}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm text-gray-500">Ganancias Totales:</span>
-                      <p className="font-semibold text-green-600">${userProfessionalProfile.totalEarnings.toLocaleString()}</p>
+                    <span className="text-sm text-gray-500">Estado General:</span>
+                    <div className="mt-1">
+                      {getVerificationStatusBadge(userProfessionalProfile.generalVerificationStatus)}
                     </div>
                   </div>
                 </div>
-              )}
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-sm text-gray-500">Calificación Promedio:</span>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+                      <span className="font-semibold text-lg">{userProfessionalProfile.averageRating.toFixed(1)}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <span className="text-sm text-gray-500">Trabajos Completados:</span>
+                    <p className="font-semibold text-lg">{userProfessionalProfile.totalJobs}</p>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <div>
+                    <span className="text-sm text-gray-500">Ganancias Totales:</span>
+                    <p className="font-semibold text-lg text-green-600">${userProfessionalProfile.totalEarnings.toLocaleString()}</p>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -1630,6 +1579,10 @@ export default function ProfessionalTabMultiService({
           <ProfessionalScheduleManagerAdvanced 
             professionalServices={userProfessionalProfile.services}
           />
+        </TabsContent>
+
+        <TabsContent value="bankAccounts">
+          <ProfessionalBankAccounts />
         </TabsContent>
       </Tabs>
     </div>

@@ -221,15 +221,17 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
         }))
         const estadoRaw: string | null = data.estado_general || null
         const estado = (estadoRaw || '').toLowerCase()
+        const stats = data.estadisticas || { trabajos_completados: 0, calificacion_promedio: 0.0, ganancias_totales: 0 }
+        
         if (estado === 'aprobado' || estado === 'approved') {
           const profile = {
             id: 'profile-remote',
             userId: user.id,
             generalDescription: '',
             generalVerificationStatus: 'approved' as const,
-            averageRating: 0,
-            totalJobs: 0,
-            totalEarnings: 0,
+            averageRating: stats.calificacion_promedio || 0,
+            totalJobs: stats.trabajos_completados || 0,
+            totalEarnings: stats.ganancias_totales || 0,
             isActive: true,
             acceptsNewJobs: true,
             services: mappedServices,
@@ -265,6 +267,8 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
   const handleMarkAsCompleted = async (requestId: string) => {
     try {
       await apiPost(`/api/requests/${requestId}/complete/`, {}, { auth: true })
+      
+      // Actualizar el estado local
       setServiceRequests(prev => 
         prev.map(req => 
           req.id === requestId 
@@ -272,9 +276,11 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
             : req
         )
       )
-    } catch (e) {
-      console.error('No se pudo marcar como completado', e)
-      alert('No se pudo marcar como completado. Intenta nuevamente.')
+      
+      // Proceso completado exitosamente - sin mensaje emergente
+    } catch (e: any) {
+      console.error('Error al marcar como completado:', e)
+      alert(e.message || 'No se pudo marcar como completado. Intenta nuevamente.')
     }
   }
 

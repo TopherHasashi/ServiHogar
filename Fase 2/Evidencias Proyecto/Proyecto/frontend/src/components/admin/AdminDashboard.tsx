@@ -17,6 +17,7 @@ import {
 import ServiceRequests from "./ServiceRequests"
 import ProfessionalManagement from "./ProfessionalManagement"
 import ServiceManagement from "./ServiceManagement"
+import PaymentHistory from "./PaymentHistory"
 
 export default function AdminDashboard() {
   const stats = [
@@ -122,11 +123,12 @@ export default function AdminDashboard() {
         </div>
 
         <Tabs defaultValue="dashboard" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:grid-cols-4">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:grid-cols-5">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="requests">Solicitudes</TabsTrigger>
             <TabsTrigger value="professionals">Profesionales</TabsTrigger>
             <TabsTrigger value="services">Servicios</TabsTrigger>
+            <TabsTrigger value="payments">Pagos</TabsTrigger>
           </TabsList>
 
           <TabsContent value="dashboard" className="space-y-6">
@@ -267,6 +269,10 @@ export default function AdminDashboard() {
 
           <TabsContent value="services">
             <ServiceManagement />
+          </TabsContent>
+
+          <TabsContent value="payments">
+            <PaymentHistory />
           </TabsContent>
         </Tabs>
       </div>

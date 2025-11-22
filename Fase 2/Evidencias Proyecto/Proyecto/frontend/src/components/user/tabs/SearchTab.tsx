@@ -15,7 +15,8 @@ import {
   Filter,
   ChevronLeft,
   ChevronRight,
-  CheckCircle
+  CheckCircle,
+  X
 } from "lucide-react"
 
 interface SearchTabProps {
@@ -52,39 +53,6 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
     "Jardinería": "jardineria",
   }), [])
 
-  // Inicializar región y comuna cuando el usuario esté disponible
-  useEffect(() => {
-    // Intentar obtener región y comuna desde el dominio del usuario
-    const comunaId = user?.dominio?.id_comuna
-    
-    if (comunaId) {
-      // Si el usuario tiene comuna en dominio, obtener su información y región
-      apiGet(`/api/geo/comunas/?comuna_id=${encodeURIComponent(comunaId)}`)
-        .then((data) => {
-          if (Array.isArray(data) && data.length > 0) {
-            const comuna = data[0]
-            const regionId = comuna.region_id || comuna.id_region
-            
-            if (regionId) {
-              setSelectedRegion(String(regionId))
-              setSelectedCommune(String(comunaId))
-              
-              // Cargar comunas de la región
-              setLoadingCommunes(true)
-              apiGet(`/api/geo/comunas/?region_id=${encodeURIComponent(regionId)}`)
-                .then((comunasData) => {
-                  const comunasList = Array.isArray(comunasData) ? comunasData : []
-                  setCommunes(comunasList.map((c: any) => ({ id: String(c.id), nombre: c.nombre, codigo: c.codigo })))
-                })
-                .catch(() => {})
-                .finally(() => setLoadingCommunes(false))
-            }
-          }
-        })
-        .catch(() => {})
-    }
-  }, [user])
-
   // Cargar regiones al montar
   useEffect(() => {
     let ignore = false
@@ -94,19 +62,6 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
         if (ignore) return
         const list = Array.isArray(data) ? data : []
         setRegions(list.map((r: any) => ({ id: String(r.id), nombre: r.nombre, codigo: r.codigo })))
-        
-        // Si el usuario tiene región preseleccionada, cargar sus comunas
-        if (user?.profile?.region) {
-          setLoadingCommunes(true)
-          apiGet(`/api/geo/comunas/?region_id=${encodeURIComponent(user.profile.region)}`)
-            .then((comunasData) => {
-              if (ignore) return
-              const comunasList = Array.isArray(comunasData) ? comunasData : []
-              setCommunes(comunasList.map((c: any) => ({ id: String(c.id), nombre: c.nombre, codigo: c.codigo })))
-            })
-            .catch(() => {})
-            .finally(() => { if (!ignore) setLoadingCommunes(false) })
-        }
       })
       .catch(() => {})
       .finally(() => { if (!ignore) setLoadingRegions(false) })
@@ -275,6 +230,18 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
     setSelectedCommune("") // Limpiar comuna seleccionada cuando cambia la región
   }
 
+  const clearAllFilters = () => {
+    setSearchQuery("")
+    setSelectedService("")
+    setSelectedRegion("")
+    setSelectedCommune("")
+    setPriceRange("")
+    setRating("")
+    setSelectedGender("")
+    setSelectedAgeRange("")
+    setCurrentPage(1)
+  }
+
   const handleBookService = (professional: any) => {
     setSelectedProfessional(professional)
     setShowServiceBooking(true)
@@ -341,10 +308,21 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
         <div className="w-full lg:w-80 lg:flex-shrink-0">
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Filter className="w-5 h-5" />
-                Filtros
-              </CardTitle>
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Filter className="w-5 h-5" />
+                  Filtros
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearAllFilters}
+                  className="text-xs"
+                >
+                  <X className="w-4 h-4 mr-1" />
+                  Limpiar
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3 lg:space-y-4">
               {/* Filtro por Servicio */}
@@ -549,7 +527,7 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
                               <Star className="w-3 h-3 sm:w-4 sm:h-4 fill-yellow-400 text-yellow-400" />
                               <span className="font-medium text-sm">{professional.rating}</span>
                               <span className="text-xs sm:text-sm text-gray-500">
-                                ({professional.reviews} reseñas)
+                                ({professional.reviews} reseña{professional.reviews !== 1 ? 's' : ''})
                               </span>
                             </div>
                             <div className="text-xs sm:text-sm text-gray-600">
@@ -591,47 +569,45 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
               </div>
 
               {/* Paginación */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-6">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                    disabled={currentPage === 1}
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </Button>
-                  
-                  <div className="flex gap-1">
-                    {getPageNumbers().map((page, idx) => (
-                      typeof page === 'number' ? (
-                        <Button
-                          key={idx}
-                          variant={currentPage === page ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setCurrentPage(page)}
-                          className="min-w-[40px]"
-                        >
-                          {page}
-                        </Button>
-                      ) : (
-                        <span key={idx} className="flex items-center px-2 text-gray-400">
-                          {page}
-                        </span>
-                      )
-                    ))}
-                  </div>
-
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                    disabled={currentPage === totalPages}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
+              <div className="flex items-center justify-center gap-2 mt-6">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                
+                <div className="flex gap-1">
+                  {getPageNumbers().map((page, idx) => (
+                    typeof page === 'number' ? (
+                      <Button
+                        key={idx}
+                        variant={currentPage === page ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(page)}
+                        className="min-w-[40px]"
+                      >
+                        {page}
+                      </Button>
+                    ) : (
+                      <span key={idx} className="flex items-center px-2 text-gray-400">
+                        {page}
+                      </span>
+                    )
+                  ))}
                 </div>
-              )}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages || totalPages === 0}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           )}
         </div>

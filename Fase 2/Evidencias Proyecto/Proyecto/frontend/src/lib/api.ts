@@ -151,6 +151,17 @@ export async function apiPutAuth<TBody extends Record<string, any>>(path: string
   return { ok: true } as any
 }
 
+export async function apiPostAuth<TBody extends Record<string, any>>(path: string, body: TBody) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+  const res = await fetchWithAuth(`${API_URL}${path}`, { method: 'POST', headers, body: JSON.stringify(body) })
+  if (!res.ok) {
+    throw new Error(await extractErrorMessage(res))
+  }
+  const ct = res.headers.get('content-type') || ''
+  if (ct.includes('application/json')) return res.json()
+  return { ok: true } as any
+}
+
 export async function apiDeleteAuth(path: string) {
   const headers: Record<string, string> = { 'Accept': 'application/json' }
   const res = await fetchWithAuth(`${API_URL}${path}`, { method: 'DELETE', headers })

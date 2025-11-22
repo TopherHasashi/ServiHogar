@@ -302,3 +302,297 @@ def admin_dashboard_summary(request):
 			{"message": "Error obteniendo datos del dashboard", "error": str(e)},
 			status=status.HTTP_500_INTERNAL_SERVER_ERROR
 		)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def payment_metrics(request):
+	"""
+	Métricas del sistema de escrow de pagos.
+	Retorna ganancias, retenciones, pagos procesados, etc.
+	"""
+	# Verificar que el usuario sea administrador
+	if not request.user.is_staff:
+		return Response(
+			{"message": "Acceso denegado. Solo administradores."},
+			status=status.HTTP_403_FORBIDDEN
+		)
+	
+	try:
+		now = timezone.now()
+		first_day_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+		
+		with connection.cursor() as cur:
+			# 1. Comisiones totales acumuladas
+			cur.execute("""
+				SELECT 
+					COALESCE(SUM(comision_plataforma), 0) AS comisiones_totales,
+					COUNT(*) AS total_pagos
+				FROM pago
+				WHERE estado = 'aprobado'
+			""")
+			row = cur.fetchone()
+			comisiones_totales, total_pagos = row
+			
+			# 2. Comisiones del mes actual
+			cur.execute("""
+				SELECT 
+					COALESCE(SUM(comision_plataforma), 0) AS comisiones_mes,
+					COUNT(*) AS pagos_mes
+				FROM pago
+				WHERE estado = 'aprobado'
+				  AND creado_en >= %s
+			""", [first_day_month])
+			row = cur.fetchone()
+			comisiones_mes, pagos_mes = row
+			
+			# 3. Dinero retenido actualmente (no liberado ni reembolsado)
+			cur.execute("""
+				SELECT 
+					COALESCE(SUM(monto), 0) AS dinero_retenido,
+					COUNT(*) AS pagos_retenidos
+				FROM pago
+				WHERE estado = 'aprobado'
+				  AND liberado_al_profesional_en IS NULL
+				  AND reembolsado_en IS NULL
+			""")
+			row = cur.fetchone()
+			dinero_retenido, pagos_retenidos = row
+			
+			# 4. Pagos liberados (completados)
+			cur.execute("""
+				SELECT 
+					COALESCE(SUM(monto_profesional), 0) AS total_liberado,
+					COUNT(*) AS pagos_liberados
+				FROM pago
+				WHERE estado = 'aprobado'
+				  AND liberado_al_profesional_en IS NOT NULL
+			""")
+			row = cur.fetchone()
+			total_liberado, pagos_liberados = row
+			
+			# 5. Reembolsos procesados
+			cur.execute("""
+				SELECT 
+					COALESCE(SUM(monto_reembolso), 0) AS total_reembolsado,
+					COUNT(*) AS reembolsos_procesados
+				FROM pago
+				WHERE estado = 'reembolsado'
+			""")
+			row = cur.fetchone()
+			total_reembolsado, reembolsos_procesados = row
+			
+			# 6. Pagos a profesionales procesados
+			cur.execute("""
+				SELECT 
+					COALESCE(SUM(monto_a_pagar), 0) AS total_pagado_profesionales,
+					COUNT(*) AS pagos_completados
+				FROM pago_profesional
+				WHERE estado = 'pagado'
+			""")
+			row = cur.fetchone()
+			total_pagado_prof, pagos_completados = row
+			
+			# 7. Tasa de completitud vs cancelación
+			cur.execute("""
+				SELECT 
+					COUNT(CASE WHEN estado = 'completado' THEN 1 END) AS servicios_completados,
+					COUNT(CASE WHEN estado = 'cancelado' THEN 1 END) AS servicios_cancelados,
+					COUNT(*) AS total_servicios
+				FROM solicitud_servicio
+				WHERE creado_en >= %s
+			""", [first_day_month])
+			row = cur.fetchone()
+			completados, cancelados, total_servicios = row
+			
+			tasa_completitud = (completados / total_servicios * 100) if total_servicios > 0 else 0
+			tasa_cancelacion = (cancelados / total_servicios * 100) if total_servicios > 0 else 0
+			
+			# 8. Top 5 profesionales con más ganancias este mes
+			cur.execute("""
+				SELECT 
+					u.nombres || ' ' || u.apellidos AS profesional,
+					u.rut,
+					COALESCE(SUM(pp.monto_a_pagar), 0) AS ganancias,
+					COUNT(*) AS servicios
+				FROM pago_profesional pp
+				INNER JOIN usuario u ON u.rut = pp.rut_profesional
+				WHERE pp.estado = 'pagado'
+				  AND pp.fecha_pagado >= %s
+				GROUP BY u.rut, u.nombres, u.apellidos
+				ORDER BY ganancias DESC
+				LIMIT 5
+			""", [first_day_month])
+			top_profesionales = []
+			for row in cur.fetchall():
+				top_profesionales.append({
+					"profesional": row[0],
+					"rut": row[1],
+					"ganancias": int(row[2]) if row[2] else 0,
+					"servicios": row[3]
+				})
+		
+		data = {
+			"comisiones": {
+				"totales": int(comisiones_totales) if comisiones_totales else 0,
+				"mes_actual": int(comisiones_mes) if comisiones_mes else 0,
+				"total_pagos": total_pagos
+			},
+			"escrow": {
+				"dinero_retenido": int(dinero_retenido) if dinero_retenido else 0,
+				"pagos_retenidos": pagos_retenidos,
+				"total_liberado": int(total_liberado) if total_liberado else 0,
+				"pagos_liberados": pagos_liberados
+			},
+			"reembolsos": {
+				"total": int(total_reembolsado) if total_reembolsado else 0,
+				"cantidad": reembolsos_procesados
+			},
+			"pagos_profesionales": {
+				"total_pagado": int(total_pagado_prof) if total_pagado_prof else 0,
+				"cantidad": pagos_completados
+			},
+			"tasas": {
+				"completitud": round(tasa_completitud, 2),
+				"cancelacion": round(tasa_cancelacion, 2),
+				"servicios_completados": completados,
+				"servicios_cancelados": cancelados,
+				"total_servicios": total_servicios
+			},
+			"top_profesionales": top_profesionales,
+			"periodo": {
+				"inicio": first_day_month.isoformat(),
+				"fin": now.isoformat()
+			}
+		}
+		
+		return Response(data)
+		
+	except Exception as e:
+		logger.exception("Error obteniendo métricas de pagos")
+		return Response(
+			{"message": "Error obteniendo métricas", "error": str(e)},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def get_payment_history(request):
+	"""
+	Obtiene el historial completo de pagos de la plataforma.
+	Incluye información del cliente, profesional, servicio y detalles del pago.
+	"""
+	# Verificar que el usuario sea administrador
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"SELECT rol FROM usuario WHERE email = %s",
+				[request.user.email]
+			)
+			row = cur.fetchone()
+			if not row or row[0] != 'administrador':
+				return Response(
+					{"message": "Acceso denegado. Solo administradores."},
+					status=status.HTTP_403_FORBIDDEN
+				)
+	except Exception as e:
+		logger.exception("Error verificando rol de administrador")
+		return Response(
+			{"message": "Error verificando permisos"},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+	
+	try:
+		with connection.cursor() as cur:
+			# Obtener parámetros de paginación
+			page = int(request.GET.get('page', 1))
+			page_size = int(request.GET.get('page_size', 10))
+			offset = (page - 1) * page_size
+			
+			# Contar total de pagos
+			cur.execute("SELECT COUNT(*) FROM pago")
+			total_count = cur.fetchone()[0]
+			
+			# Obtener estadísticas globales
+			cur.execute("""
+				SELECT 
+					COUNT(*) as total_aprobados,
+					COALESCE(SUM(monto), 0) as monto_total
+				FROM pago 
+				WHERE estado = 'aprobado'
+			""")
+			stats_row = cur.fetchone()
+			total_aprobados = stats_row[0] if stats_row else 0
+			monto_total = int(stats_row[1]) if stats_row and stats_row[1] else 0
+			
+			logger.info("🔍 Ejecutando consulta de pagos con LEFT JOINs...")
+			cur.execute(
+				"""
+				SELECT 
+					p.id_pago_mercadopago,
+					p.id_solicitud_servicio,
+					p.monto,
+					p.estado,
+					p.metodo_pago,
+					p.creado_en,
+					p.actualizado_en,
+					-- Información del cliente
+					COALESCE(uc.nombres || ' ' || uc.apellidos, 'Cliente Desconocido') AS nombre_cliente,
+					-- Información del profesional
+					COALESCE(up.nombres || ' ' || up.apellidos, 'Profesional Desconocido') AS nombre_profesional,
+					-- Información del servicio
+					COALESCE(cs.nombre, 'Servicio Desconocido') AS nombre_servicio,
+					COALESCE(ss.titulo, 'Sin título') AS titulo_solicitud,
+					ss.fecha_programada
+				FROM pago p
+				LEFT JOIN solicitud_servicio ss ON ss.id_solicitud_servicio = p.id_solicitud_servicio
+				LEFT JOIN usuario uc ON uc.rut = ss.rut_cliente
+				LEFT JOIN usuario up ON up.rut = ss.rut_profesional
+				LEFT JOIN servicio_profesional sp ON sp.id_servicio_profesional = ss.id_servicio_profesional
+				LEFT JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
+				ORDER BY p.creado_en DESC
+				LIMIT %s OFFSET %s
+				""",
+				[page_size, offset]
+			)
+			rows = cur.fetchall()
+			logger.info(f"✅ Consulta ejecutada. Filas encontradas: {len(rows)}")
+			
+			pagos = []
+			for row in rows:
+				pagos.append({
+					"id_pago": str(row[0]),
+					"id_solicitud": str(row[1]) if row[1] else "N/A",
+					"monto": int(row[2]) if row[2] else 0,
+					"estado": row[3] or 'pendiente',
+					"metodo_pago": row[4] or 'mercadopago',
+					"fecha_pago": row[5].isoformat() if row[5] else None,
+					"actualizado_en": row[6].isoformat() if row[6] else None,
+					"nombre_cliente": row[7],
+					"nombre_profesional": row[8],
+					"servicio": row[9],
+					"titulo_solicitud": row[10],
+					"fecha_programada": row[11].isoformat() if row[11] else None
+				})
+			
+			logger.info(f"📦 Devolviendo {len(pagos)} pagos al frontend")
+			total_pages = (total_count + page_size - 1) // page_size
+			return Response({
+				"pagos": pagos,
+				"total": total_count,
+				"page": page,
+				"page_size": page_size,
+				"total_pages": total_pages,
+				"estadisticas": {
+					"total_aprobados": total_aprobados,
+					"monto_total": monto_total
+				}
+			})
+			
+	except Exception as e:
+		logger.exception("Error obteniendo historial de pagos")
+		return Response(
+			{"message": "Error obteniendo historial", "error": str(e)},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)

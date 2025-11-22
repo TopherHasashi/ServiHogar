@@ -11,6 +11,7 @@ import { Switch } from "../ui/switch"
 import { Alert, AlertDescription } from "../ui/alert"
 import ServihogarBankAccountManager from "./ServihogarBankAccountManager"
 import OperationsCenter from "./OperationsCenter"
+import PaymentHistory from "./PaymentHistory"
 import { apiGetAuth, apiPutAuth } from "../../lib/api"
 import { 
   Users, 
@@ -247,10 +248,11 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
         {/* Dashboard Content */}
         {!loading && !error && (
           <Tabs defaultValue="overview" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-5">
               <TabsTrigger value="overview">Resumen Ejecutivo</TabsTrigger>
               <TabsTrigger value="operations">Centro de Operaciones</TabsTrigger>
               <TabsTrigger value="banking">Cuentas Bancarias</TabsTrigger>
+              <TabsTrigger value="payments">Historial Pagos</TabsTrigger>
               <TabsTrigger value="config">Configuración</TabsTrigger>
             </TabsList>
 
@@ -739,6 +741,11 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                 </AlertDescription>
               </Alert>
             )}
+          </TabsContent>
+
+          {/* TAB: HISTORIAL DE PAGOS */}
+          <TabsContent value="payments" className="space-y-6">
+            <PaymentHistory />
           </TabsContent>
         </Tabs>
         )}

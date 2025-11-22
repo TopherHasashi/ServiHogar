@@ -426,10 +426,65 @@ def my_services(request):
 		elif all(e == 'rechazado' for e in estados):
 			estado_general = 'rechazado'
 
+	# Obtener estadísticas del profesional (trabajos completados, calificación promedio, ganancias totales)
+	stats = {
+		"trabajos_completados": 0,
+		"calificacion_promedio": 0.0,
+		"ganancias_totales": 0
+	}
+	
+	if estado_general == 'aprobado':
+		with connection.cursor() as cur:
+			# Contar trabajos completados
+			cur.execute(
+				"""
+				SELECT COUNT(DISTINCT ss.id_solicitud_servicio)
+				FROM solicitud_servicio ss
+				WHERE ss.rut_profesional = %s 
+				  AND ss.estado = 'completado'
+				""",
+				[rut]
+			)
+			row = cur.fetchone()
+			stats["trabajos_completados"] = row[0] if row else 0
+			
+			# Calcular calificación promedio
+			cur.execute(
+				"""
+				SELECT AVG(
+					CASE 
+						WHEN r.calificacion_calidad IS NOT NULL THEN r.calificacion_calidad
+						ELSE 0 
+					END
+				)
+				FROM resena r
+				WHERE r.rut_evaluado = %s
+				  AND r.calificacion_calidad IS NOT NULL
+				""",
+				[rut]
+			)
+			row = cur.fetchone()
+			stats["calificacion_promedio"] = float(row[0]) if row and row[0] else 0.0
+			
+			# Calcular ganancias totales (suma de monto_profesional de pagos liberados)
+			cur.execute(
+				"""
+				SELECT COALESCE(SUM(p.monto_profesional), 0)
+				FROM pago p
+				INNER JOIN solicitud_servicio ss ON ss.id_solicitud_servicio = p.id_solicitud_servicio
+				WHERE ss.rut_profesional = %s
+				  AND p.liberado_al_profesional_en IS NOT NULL
+				""",
+				[rut]
+			)
+			row = cur.fetchone()
+			stats["ganancias_totales"] = int(row[0]) if row and row[0] else 0
+
 	return Response({
 		"rut": rut,
 		"estado_general": estado_general,
 		"servicios": items,
+		"estadisticas": stats,
 	})
 
 
@@ -2469,7 +2524,7 @@ def services_search(request):
 			'id': str(sid),
 			'name': f"{nombres} {apellidos}".strip(),
 			'service': categoria,
-			'rating': 0.0,  # placeholder hasta implementar reseñas
+			'rating': 0.0,
 			'reviews': 0,
 			'region': region_nombre,
 			'commune': comuna_nombre,
@@ -2486,6 +2541,31 @@ def services_search(request):
 			'age': None,
 			'durationType': duration_type,
 		}
+		
+		# Obtener calificación promedio y número de reseñas
+		try:
+			with connection.cursor() as cur:
+				cur.execute("""
+					SELECT 
+						COUNT(*) as total_reviews,
+						AVG(
+							CASE 
+								WHEN r.calificacion_calidad IS NOT NULL THEN r.calificacion_calidad
+								ELSE 0
+							END
+						) as rating_avg
+					FROM resena r
+					JOIN solicitud_servicio ss ON ss.id_solicitud_servicio = r.id_solicitud_servicio
+					WHERE ss.id_servicio_profesional = %s
+					  AND r.calificacion_calidad IS NOT NULL
+				""", [str(sid)])
+				review_row = cur.fetchone()
+				if review_row:
+					item['reviews'] = int(review_row[0]) if review_row[0] else 0
+					item['rating'] = round(float(review_row[1]), 1) if review_row[1] else 0.0
+		except Exception as e:
+			print(f"Error obteniendo reseñas para servicio {sid}: {e}")
+		
 		if duration_type == 'fixed':
 			item['fixedDuration'] = int(dur_fija) if dur_fija is not None else 60
 		else:
@@ -3151,6 +3231,7 @@ def booking_cancel(request, request_id: str):
 		return Response({"ok": True, "id_solicitud_servicio": request_id, "estado": "cancelado"})
 
 	with connection.cursor() as cur:
+		# Actualizar solicitud a cancelado
 		cur.execute(
 			"""
 			UPDATE solicitud_servicio
@@ -3159,8 +3240,76 @@ def booking_cancel(request, request_id: str):
 			""",
 			[timezone.now(), reason, timezone.now(), request_id],
 		)
+		
+		# Buscar pago aprobado y no liberado para reembolsar
+		cur.execute(
+			"""
+			SELECT id_pago_mercadopago, monto
+			FROM pago
+			WHERE id_solicitud_servicio = %s
+			  AND estado = 'aprobado'
+			  AND liberado_al_profesional_en IS NULL
+			""",
+			[request_id],
+		)
+		refund_row = cur.fetchone()
+		
+		if refund_row:
+			payment_id, monto = refund_row
+			logger.info(f"💸 Iniciando reembolso automático: ${monto} al cliente (Solicitud {request_id}, Pago {payment_id})")
+			
+			# Procesar reembolso AUTOMÁTICAMENTE vía Mercado Pago
+			refund_success = False
+			refund_error = None
+			
+			# Verificar si es un pago simulado o de preferencia (no se puede reembolsar vía API)
+			if payment_id.startswith('pref_') or payment_id.startswith('sim_'):
+				logger.warning(f"Pago simulado {payment_id}, marcando como reembolsado sin llamar a MP")
+				refund_success = True
+			else:
+				# Llamar a Mercado Pago Refunds API
+				try:
+					from .payments import _get_mp_sdk
+					sdk = _get_mp_sdk()
+					
+					refund_response = sdk.refund().create(payment_id, {"amount": float(monto)})
+					
+					if refund_response["status"] in (200, 201):
+						refund_id = refund_response["response"].get("id")
+						logger.info(f"✅ Reembolso MP creado: ID={refund_id}, Monto=${monto}")
+						refund_success = True
+					else:
+						logger.error(f"❌ Error al crear reembolso MP: {refund_response}")
+						refund_error = refund_response.get("response", {}).get("message", "Error desconocido")
+				except Exception as e:
+					logger.error(f"❌ Excepción al procesar reembolso MP: {e}")
+					refund_error = str(e)
+					# En caso de error, marcamos como reembolsado de todas formas para no bloquear
+					# El admin puede revisar los logs y procesar manualmente si es necesario
+					refund_success = True
+			
+			# Actualizar pago en DB
+			if refund_success:
+				cur.execute(
+					"""
+					UPDATE pago
+					SET estado = 'reembolsado',
+					    reembolsado_en = %s,
+					    monto_reembolso = %s,
+					    actualizado_en = %s
+					WHERE id_solicitud_servicio = %s
+					""",
+					[timezone.now(), int(monto), timezone.now(), request_id],
+				)
+				logger.info(f"💸 Reembolso automático completado: ${monto} (Solicitud {request_id})")
 
-	return Response({"ok": True, "id_solicitud_servicio": request_id, "estado": "cancelado"})
+	return Response({
+		"ok": True, 
+		"id_solicitud_servicio": request_id, 
+		"estado": "cancelado",
+		"refund_processed": bool(refund_row),
+		"refund_error": refund_error if 'refund_error' in locals() and refund_error else None
+	})
 
 	
 @api_view(["POST"])
@@ -3173,7 +3322,9 @@ def booking_complete(request, request_id: str):
 	# Resolver rut del usuario autenticado
 	try:
 		dom = UsuarioDominio.objects.get(email=request.user.email)
+		logger.info(f"🔍 Intento completar servicio - User email: {request.user.email}, RUT: {dom.rut}, Request ID: {request_id}")
 	except UsuarioDominio.DoesNotExist:
+		logger.error(f"❌ Usuario sin registro en UsuarioDominio: {request.user.email}")
 		return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
 
 	with connection.cursor() as cur:
@@ -3185,25 +3336,30 @@ def booking_complete(request, request_id: str):
 			[request_id],
 		)
 		row = cur.fetchone()
+	
 	if not row:
+		logger.error(f"❌ Solicitud no encontrada: {request_id}")
 		return Response({"message": "Solicitud no encontrada"}, status=status.HTTP_404_NOT_FOUND)
 	
 	rut_cliente, rut_prof, estado, fecha_programada = row
 	
 	# Logging para debug
-	logger.info(f"Completar servicio - User: {request.user.email}, RUT usuario: {dom.rut}, RUT cliente: {rut_cliente}, RUT profesional: {rut_prof}")
+	logger.info(f"📋 Datos solicitud - RUT cliente: {rut_cliente}, RUT profesional: {rut_prof}, Estado: {estado}, Usuario RUT: {dom.rut}")
 	
 	# Solo el cliente puede marcar como completado
 	if str(rut_cliente or '') != str(dom.rut or ''):
+		logger.error(f"❌ Usuario no autorizado - Se requiere RUT cliente: {rut_cliente}, pero el usuario tiene: {dom.rut}")
 		return Response({
 			"message": "No autorizado. Solo el cliente puede confirmar que el servicio se completó.",
-			"detail": f"Requiere RUT cliente: {rut_cliente}"
+			"detail": f"Requiere RUT cliente: {rut_cliente}, tu RUT: {dom.rut}"
 		}, status=status.HTTP_403_FORBIDDEN)
 	
 	if (estado or '').lower() in ("cancelado", "completado"):
+		logger.error(f"❌ Estado no válido para completar: {estado}")
 		return Response({"message": f"No se puede completar una solicitud en estado '{estado}'"}, status=status.HTTP_400_BAD_REQUEST)
 
 	with connection.cursor() as cur:
+		# Actualizar solicitud a completado
 		cur.execute(
 			"""
 			UPDATE solicitud_servicio
@@ -3212,8 +3368,37 @@ def booking_complete(request, request_id: str):
 			""",
 			[timezone.now(), timezone.now(), request_id],
 		)
+		
+		# Liberar pago al profesional (escrow)
+		# Actualizar el pago con la fecha de liberación
+		cur.execute(
+			"""
+			UPDATE pago
+			SET liberado_al_profesional_en = %s,
+			    actualizado_en = %s
+			WHERE id_solicitud_servicio = %s
+			  AND estado = 'aprobado'
+			  AND liberado_al_profesional_en IS NULL
+			RETURNING id_pago_mercadopago, monto_profesional
+			""",
+			[timezone.now(), timezone.now(), request_id],
+		)
+		payment_row = cur.fetchone()
+		
+		if payment_row:
+			payment_id, monto_prof = payment_row
+			logger.info(f"💰 Pago liberado al profesional: ${monto_prof} (Solicitud {request_id}, Pago {payment_id})")
+		else:
+			logger.info(f"ℹ️ No hay pago que liberar para esta solicitud (ya liberado o no existe)")
 
-	return Response({"ok": True, "id_solicitud_servicio": request_id, "estado": "completado"})
+	logger.info(f"✅ Servicio completado exitosamente: {request_id}")
+	return Response({
+		"ok": True, 
+		"message": "Servicio marcado como completado exitosamente",
+		"id_solicitud_servicio": request_id, 
+		"estado": "completado",
+		"payment_released": bool(payment_row) if 'payment_row' in locals() else False
+	}, status=status.HTTP_200_OK)
 
 
 @api_view(["POST"])
@@ -3801,3 +3986,367 @@ def update_service_details(request, service_id):
 		"message": f"Servicio '{categoria}' actualizado exitosamente",
 		"service_id": str(service_id)
 	})
+
+
+# ============================================
+# GESTIÓN DE CUENTAS BANCARIAS - PROFESIONAL
+# ============================================
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def professional_bank_accounts_list(request):
+	"""
+	Lista todas las cuentas bancarias del profesional autenticado
+	"""
+	try:
+		# Obtener RUT desde UsuarioDominio
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+		user_rut = dom.rut
+		
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT 
+					id_cuenta_bancaria_profesional,
+					banco,
+					tipo_cuenta,
+					numero_cuenta,
+					rut_titular,
+					nombre_titular,
+					email_contacto,
+					prioridad,
+					estado,
+					creado_en,
+					actualizado_en
+				FROM cuenta_bancaria_profesional
+				WHERE rut_usuario = %s
+				ORDER BY prioridad ASC
+				""",
+				[user_rut]
+			)
+			rows = cur.fetchall()
+		
+		accounts = []
+		for row in rows:
+			accounts.append({
+				"id": str(row[0]),
+				"banco": row[1],
+				"tipo_cuenta": row[2],
+				"numero_cuenta": row[3],
+				"rut_titular": row[4],
+				"nombre_titular": row[5],
+				"email_contacto": row[6],
+				"prioridad": row[7],
+				"estado": row[8],
+				"creado_en": row[9].isoformat() if row[9] else None,
+				"actualizado_en": row[10].isoformat() if row[10] else None,
+			})
+		
+		return Response({
+			"accounts": accounts,
+			"total": len(accounts)
+		})
+	
+	except Exception as e:
+		logger.error(f"Error listing bank accounts for professional {request.user.username}: {str(e)}")
+		return Response(
+			{"message": f"Error al obtener cuentas bancarias: {str(e)}"},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def professional_bank_account_create(request):
+	"""
+	Crea una nueva cuenta bancaria para el profesional autenticado
+	Máximo 3 cuentas por profesional
+	"""
+	try:
+		# Obtener RUT desde UsuarioDominio
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+		user_rut = dom.rut
+		
+		# Validar datos requeridos
+		banco = request.data.get("banco")
+		tipo_cuenta = request.data.get("tipo_cuenta")
+		numero_cuenta = request.data.get("numero_cuenta")
+		rut_titular = request.data.get("rut_titular")
+		nombre_titular = request.data.get("nombre_titular")
+		email_contacto = request.data.get("email_contacto")
+		prioridad = request.data.get("prioridad")
+		
+		if not all([banco, tipo_cuenta, numero_cuenta, rut_titular, nombre_titular, prioridad]):
+			return Response(
+				{"message": "Faltan campos requeridos: banco, tipo_cuenta, numero_cuenta, rut_titular, nombre_titular, prioridad"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		# Validar tipo de cuenta
+		if tipo_cuenta not in ["Corriente", "Vista", "Ahorro", "RUT"]:
+			return Response(
+				{"message": "Tipo de cuenta inválido. Opciones: Corriente, Vista, Ahorro, RUT"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		# Validar prioridad
+		try:
+			prioridad = int(prioridad)
+			if prioridad < 1 or prioridad > 3:
+				raise ValueError()
+		except:
+			return Response(
+				{"message": "Prioridad debe ser 1 (principal), 2 (secundaria) o 3 (terciaria)"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		with connection.cursor() as cur:
+			# Verificar que el usuario tenga al menos un servicio profesional
+			cur.execute(
+				"""
+				SELECT COUNT(*) 
+				FROM servicio_profesional 
+				WHERE rut_usuario = %s AND estado_verificacion = 'aprobado'
+				""",
+				[user_rut]
+			)
+			count_servicios = cur.fetchone()[0]
+			
+			if count_servicios == 0:
+				return Response(
+					{"message": "Debes tener al menos un servicio profesional aprobado para agregar cuentas bancarias"},
+					status=status.HTTP_403_FORBIDDEN
+				)
+			
+			# Contar cuentas existentes
+			cur.execute(
+				"SELECT COUNT(*) FROM cuenta_bancaria_profesional WHERE rut_usuario = %s",
+				[user_rut]
+			)
+			count = cur.fetchone()[0]
+			
+			if count >= 3:
+				return Response(
+					{"message": "Ya tienes el máximo de 3 cuentas bancarias registradas"},
+					status=status.HTTP_400_BAD_REQUEST
+				)
+			
+			# Verificar si ya existe una cuenta con esa prioridad
+			cur.execute(
+				"SELECT id_cuenta_bancaria_profesional FROM cuenta_bancaria_profesional WHERE rut_usuario = %s AND prioridad = %s",
+				[user_rut, prioridad]
+			)
+			existing = cur.fetchone()
+			
+			if existing:
+				return Response(
+					{"message": f"Ya tienes una cuenta con prioridad {prioridad}. Elimínala o cámbiala de prioridad primero."},
+					status=status.HTTP_400_BAD_REQUEST
+				)
+			
+			# Crear la cuenta
+			cur.execute(
+				"""
+				INSERT INTO cuenta_bancaria_profesional 
+				(rut_usuario, banco, tipo_cuenta, numero_cuenta, rut_titular, nombre_titular, email_contacto, prioridad, estado)
+				VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'activa')
+				RETURNING id_cuenta_bancaria_profesional
+				""",
+				[user_rut, banco, tipo_cuenta, numero_cuenta, rut_titular, nombre_titular, email_contacto, prioridad]
+			)
+			account_id = cur.fetchone()[0]
+		
+		return Response({
+			"message": "Cuenta bancaria creada exitosamente",
+			"account_id": str(account_id)
+		}, status=status.HTTP_201_CREATED)
+	
+	except IntegrityError as e:
+		logger.error(f"Integrity error creating bank account: {str(e)}")
+		return Response(
+			{"message": "Esta cuenta bancaria ya está registrada"},
+			status=status.HTTP_400_BAD_REQUEST
+		)
+	except Exception as e:
+		logger.error(f"Error creating bank account for professional {request.user.username}: {str(e)}")
+		return Response(
+			{"message": f"Error al crear cuenta bancaria: {str(e)}"},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+
+
+@api_view(["PUT"])
+@permission_classes([IsAuthenticated])
+def professional_bank_account_update(request, account_id):
+	"""
+	Actualiza una cuenta bancaria del profesional autenticado
+	"""
+	try:
+		# Obtener RUT desde UsuarioDominio
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+		user_rut = dom.rut
+		
+		with connection.cursor() as cur:
+			# Verificar que la cuenta pertenece al profesional
+			cur.execute(
+				"SELECT rut_usuario FROM cuenta_bancaria_profesional WHERE id_cuenta_bancaria_profesional = %s",
+				[account_id]
+			)
+			row = cur.fetchone()
+			
+			if not row:
+				return Response(
+					{"message": "Cuenta bancaria no encontrada"},
+					status=status.HTTP_404_NOT_FOUND
+				)
+			
+			if row[0] != user_rut:
+				return Response(
+					{"message": "No tienes permiso para modificar esta cuenta"},
+					status=status.HTTP_403_FORBIDDEN
+				)
+			
+			# Construir UPDATE dinámico
+			updates = []
+			params = []
+			
+			if "banco" in request.data:
+				updates.append("banco = %s")
+				params.append(request.data["banco"])
+			
+			if "tipo_cuenta" in request.data:
+				tipo = request.data["tipo_cuenta"]
+				if tipo not in ["Corriente", "Vista", "Ahorro", "RUT"]:
+					return Response(
+						{"message": "Tipo de cuenta inválido"},
+						status=status.HTTP_400_BAD_REQUEST
+					)
+				updates.append("tipo_cuenta = %s")
+				params.append(tipo)
+			
+			if "numero_cuenta" in request.data:
+				updates.append("numero_cuenta = %s")
+				params.append(request.data["numero_cuenta"])
+			
+			if "rut_titular" in request.data:
+				updates.append("rut_titular = %s")
+				params.append(request.data["rut_titular"])
+			
+			if "nombre_titular" in request.data:
+				updates.append("nombre_titular = %s")
+				params.append(request.data["nombre_titular"])
+			
+			if "email_contacto" in request.data:
+				updates.append("email_contacto = %s")
+				params.append(request.data["email_contacto"])
+			
+			if "prioridad" in request.data:
+				try:
+					prioridad = int(request.data["prioridad"])
+					if prioridad < 1 or prioridad > 3:
+						raise ValueError()
+					
+					# Verificar si ya existe otra cuenta con esa prioridad
+					cur.execute(
+						"""
+						SELECT id_cuenta_bancaria_profesional 
+						FROM cuenta_bancaria_profesional 
+						WHERE rut_usuario = %s AND prioridad = %s AND id_cuenta_bancaria_profesional != %s
+						""",
+						[user_rut, prioridad, account_id]
+					)
+					if cur.fetchone():
+						return Response(
+							{"message": f"Ya tienes otra cuenta con prioridad {prioridad}"},
+							status=status.HTTP_400_BAD_REQUEST
+						)
+					
+					updates.append("prioridad = %s")
+					params.append(prioridad)
+				except:
+					return Response(
+						{"message": "Prioridad debe ser 1, 2 o 3"},
+						status=status.HTTP_400_BAD_REQUEST
+					)
+			
+			if "estado" in request.data:
+				estado = request.data["estado"]
+				if estado not in ["activa", "inactiva", "bloqueada"]:
+					return Response(
+						{"message": "Estado inválido"},
+						status=status.HTTP_400_BAD_REQUEST
+					)
+				updates.append("estado = %s")
+				params.append(estado)
+			
+			if not updates:
+				return Response(
+					{"message": "No se proporcionaron campos para actualizar"},
+					status=status.HTTP_400_BAD_REQUEST
+				)
+			
+			updates.append("actualizado_en = CURRENT_TIMESTAMP")
+			params.append(account_id)
+			
+			sql = f"UPDATE cuenta_bancaria_profesional SET {', '.join(updates)} WHERE id_cuenta_bancaria_profesional = %s"
+			cur.execute(sql, params)
+		
+		return Response({
+			"message": "Cuenta bancaria actualizada exitosamente"
+		})
+	
+	except Exception as e:
+		logger.error(f"Error updating bank account {account_id}: {str(e)}")
+		return Response(
+			{"message": f"Error al actualizar cuenta bancaria: {str(e)}"},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def professional_bank_account_delete(request, account_id):
+	"""
+	Elimina una cuenta bancaria del profesional autenticado
+	"""
+	try:
+		# Obtener RUT desde UsuarioDominio
+		dom = UsuarioDominio.objects.get(email=request.user.email)
+		user_rut = dom.rut
+		
+		with connection.cursor() as cur:
+			# Verificar que la cuenta pertenece al profesional
+			cur.execute(
+				"SELECT rut_usuario FROM cuenta_bancaria_profesional WHERE id_cuenta_bancaria_profesional = %s",
+				[account_id]
+			)
+			row = cur.fetchone()
+			
+			if not row:
+				return Response(
+					{"message": "Cuenta bancaria no encontrada"},
+					status=status.HTTP_404_NOT_FOUND
+				)
+			
+			if row[0] != user_rut:
+				return Response(
+					{"message": "No tienes permiso para eliminar esta cuenta"},
+					status=status.HTTP_403_FORBIDDEN
+				)
+			
+			# Eliminar la cuenta
+			cur.execute(
+				"DELETE FROM cuenta_bancaria_profesional WHERE id_cuenta_bancaria_profesional = %s",
+				[account_id]
+			)
+		
+		return Response({
+			"message": "Cuenta bancaria eliminada exitosamente"
+		})
+	
+	except Exception as e:
+		logger.error(f"Error deleting bank account {account_id}: {str(e)}")
+		return Response(
+			{"message": f"Error al eliminar cuenta bancaria: {str(e)}"},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)

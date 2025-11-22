@@ -407,15 +407,6 @@ export default function UserAuth({ onLogin, initialTab }: UserAuthProps) {
 
                 {/* Demo accounts info */}
                 <div className="mt-6 space-y-3">
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <h4 className="text-sm font-medium mb-2">Cuentas de prueba:</h4>
-                    <div className="text-xs text-gray-600 space-y-1">
-                      <div>• <strong>Usuario normal:</strong> cualquier email</div>
-                      <div>• <strong>Usuario profesional:</strong> profesional@test.com</div>
-                      <div className="text-xs text-gray-500 mt-2">Cualquier contraseña funciona para el demo</div>
-                    </div>
-                  </div>
-                  
                   <div className="p-4 bg-slate-100 rounded-lg border border-slate-200">
                     <div className="flex items-center gap-2 mb-2">
                       <Shield className="w-4 h-4 text-slate-600" />

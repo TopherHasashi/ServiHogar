@@ -28,6 +28,7 @@ import {
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { apiGetAuth, apiPutAuth } from "../../lib/api"
+import ProfessionalBankAccounts from "./ProfessionalBankAccounts"
 
 interface ProfessionalDashboardProps {
   professional: any
@@ -231,11 +232,12 @@ export default function ProfessionalDashboard({ professional, onLogout }: Profes
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Tabs defaultValue="today" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:grid-cols-6">
             <TabsTrigger value="today">Hoy</TabsTrigger>
-            <TabsTrigger value="services">Mis Servicios</TabsTrigger>
+            <TabsTrigger value="services">Servicios</TabsTrigger>
             <TabsTrigger value="schedule">Agenda</TabsTrigger>
             <TabsTrigger value="earnings">Ganancias</TabsTrigger>
+            <TabsTrigger value="bankAccounts">Cuentas</TabsTrigger>
             <TabsTrigger value="profile">Perfil</TabsTrigger>
           </TabsList>
 
@@ -628,6 +630,14 @@ export default function ProfessionalDashboard({ professional, onLogout }: Profes
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="bankAccounts">
+            <div className="p-8 bg-yellow-100 border-4 border-yellow-500 rounded-lg">
+              <h2 className="text-2xl font-bold mb-4">🏦 COMPONENTE DE PRUEBA - CUENTAS BANCARIAS</h2>
+              <p className="text-lg">Si ves esto, el tab funciona correctamente.</p>
+            </div>
+            <ProfessionalBankAccounts />
           </TabsContent>
 
           <TabsContent value="profile">

@@ -227,6 +227,31 @@ def create_booking_and_payment(request, service_id: str):
 		
 		# Crear registro de pago pendiente en la DB
 		with connection.cursor() as cur:
+			# Obtener cuenta de destino del profesional (prioridad 1)
+			cur.execute(
+				"""
+				SELECT id_cuenta_bancaria_profesional 
+				FROM cuenta_bancaria_profesional 
+				WHERE rut_usuario = %s AND prioridad = 1 AND estado = 'activa'
+				LIMIT 1
+				""",
+				[rut_prof]
+			)
+			cuenta_destino_row = cur.fetchone()
+			cuenta_destino_profesional = cuenta_destino_row[0] if cuenta_destino_row else None
+			
+			# Obtener cuenta de origen de ServiHogar (prioridad 1)
+			cur.execute(
+				"""
+				SELECT id_cuenta_bancaria_servihogar 
+				FROM cuenta_bancaria_servihogar 
+				WHERE prioridad = 1 AND estado = 'activa'
+				LIMIT 1
+				"""
+			)
+			cuenta_origen_row = cur.fetchone()
+			cuenta_origen_servihogar = cuenta_origen_row[0] if cuenta_origen_row else None
+			
 			cur.execute(
 				"""
 				INSERT INTO pago (
@@ -235,12 +260,15 @@ def create_booking_and_payment(request, service_id: str):
 					monto,
 					estado,
 					metodo_pago,
+					id_cuenta_destino_profesional,
+					id_cuenta_origen_servihogar,
 					creado_en,
 					actualizado_en
-				) VALUES (%s, %s, %s, 'pendiente', 'mercadopago', %s, %s)
+				) VALUES (%s, %s, %s, 'pendiente', 'mercadopago', %s, %s, %s, %s)
 				ON CONFLICT (id_pago_mercadopago) DO NOTHING
 				""",
-				[f"pref_{preference_id}", str(new_request_id), int(precio), timezone.now(), timezone.now()],
+				[f"pref_{preference_id}", str(new_request_id), int(precio), 
+				 cuenta_destino_profesional, cuenta_origen_servihogar, timezone.now(), timezone.now()],
 			)
 		
 		logger.info(f"Solicitud {new_request_id} creada y preferencia MP {preference_id} generada")
@@ -389,6 +417,31 @@ def create_payment_preference(request, request_id: str):
 		# Nota: id_pago_mercadopago se actualizará con el payment_id cuando MP notifique
 		# Por ahora usamos preference_id como placeholder temporal
 		with connection.cursor() as cur:
+			# Obtener cuenta de destino del profesional (prioridad 1)
+			cur.execute(
+				"""
+				SELECT id_cuenta_bancaria_profesional 
+				FROM cuenta_bancaria_profesional 
+				WHERE rut_usuario = %s AND prioridad = 1 AND estado = 'activa'
+				LIMIT 1
+				""",
+				[rut_prof]
+			)
+			cuenta_destino_row = cur.fetchone()
+			cuenta_destino_profesional = cuenta_destino_row[0] if cuenta_destino_row else None
+			
+			# Obtener cuenta de origen de ServiHogar (prioridad 1)
+			cur.execute(
+				"""
+				SELECT id_cuenta_bancaria_servihogar 
+				FROM cuenta_bancaria_servihogar 
+				WHERE prioridad = 1 AND estado = 'activa'
+				LIMIT 1
+				"""
+			)
+			cuenta_origen_row = cur.fetchone()
+			cuenta_origen_servihogar = cuenta_origen_row[0] if cuenta_origen_row else None
+			
 			cur.execute(
 				"""
 				INSERT INTO pago (
@@ -397,12 +450,15 @@ def create_payment_preference(request, request_id: str):
 					monto,
 					estado,
 					metodo_pago,
+					id_cuenta_destino_profesional,
+					id_cuenta_origen_servihogar,
 					creado_en,
 					actualizado_en
-				) VALUES (%s, %s, %s, 'pendiente', 'mercadopago', %s, %s)
+				) VALUES (%s, %s, %s, 'pendiente', 'mercadopago', %s, %s, %s, %s)
 				ON CONFLICT (id_pago_mercadopago) DO NOTHING
 				""",
-				[f"pref_{preference_id}", str(request_id), int(precio_total), timezone.now(), timezone.now()],
+				[f"pref_{preference_id}", str(request_id), int(precio_total), 
+				 cuenta_destino_profesional, cuenta_origen_servihogar, timezone.now(), timezone.now()],
 			)
 		
 		return Response({
@@ -483,6 +539,41 @@ def payment_webhook(request):
 			
 			# Actualizar o insertar pago en DB
 			with connection.cursor() as cur:
+				# Obtener rut_profesional de la solicitud para buscar cuentas
+				cur.execute(
+					"SELECT rut_profesional FROM solicitud_servicio WHERE id_solicitud_servicio = %s",
+					[external_reference]
+				)
+				prof_row = cur.fetchone()
+				rut_prof = prof_row[0] if prof_row else None
+				
+				# Obtener cuenta de destino del profesional (prioridad 1)
+				cuenta_destino_profesional = None
+				if rut_prof:
+					cur.execute(
+						"""
+						SELECT id_cuenta_bancaria_profesional 
+						FROM cuenta_bancaria_profesional 
+						WHERE rut_usuario = %s AND prioridad = 1 AND estado = 'activa'
+						LIMIT 1
+						""",
+						[rut_prof]
+					)
+					cuenta_destino_row = cur.fetchone()
+					cuenta_destino_profesional = cuenta_destino_row[0] if cuenta_destino_row else None
+				
+				# Obtener cuenta de origen de ServiHogar (prioridad 1)
+				cur.execute(
+					"""
+					SELECT id_cuenta_bancaria_servihogar 
+					FROM cuenta_bancaria_servihogar 
+					WHERE prioridad = 1 AND estado = 'activa'
+					LIMIT 1
+					"""
+				)
+				cuenta_origen_row = cur.fetchone()
+				cuenta_origen_servihogar = cuenta_origen_row[0] if cuenta_origen_row else None
+				
 				# Primero intentar actualizar si existe por external_reference
 				cur.execute(
 					"""
@@ -493,12 +584,15 @@ def payment_webhook(request):
 					    monto = %s,
 					    comision_plataforma = %s,
 					    monto_profesional = %s,
+					    id_cuenta_destino_profesional = %s,
+					    id_cuenta_origen_servihogar = %s,
 					    actualizado_en = %s
 					WHERE id_solicitud_servicio = %s
 					""",
 					[
 						str(payment_id), estado_db, payment_method or 'mercadopago',
 						monto, comision, monto_profesional,
+						cuenta_destino_profesional, cuenta_origen_servihogar,
 						timezone.now(), external_reference
 					],
 				)
@@ -515,43 +609,49 @@ def payment_webhook(request):
 							estado,
 							comision_plataforma,
 							monto_profesional,
+							id_cuenta_destino_profesional,
+							id_cuenta_origen_servihogar,
 							creado_en,
 							actualizado_en
-						) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+						) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 						ON CONFLICT (id_pago_mercadopago) DO UPDATE
 						SET estado = EXCLUDED.estado,
 						    metodo_pago = EXCLUDED.metodo_pago,
 						    monto = EXCLUDED.monto,
 						    comision_plataforma = EXCLUDED.comision_plataforma,
 						    monto_profesional = EXCLUDED.monto_profesional,
+						    id_cuenta_destino_profesional = EXCLUDED.id_cuenta_destino_profesional,
+						    id_cuenta_origen_servihogar = EXCLUDED.id_cuenta_origen_servihogar,
 						    actualizado_en = EXCLUDED.actualizado_en
 						""",
 						[
 							str(payment_id), external_reference, monto,
 							payment_method or 'mercadopago', estado_db,
 							comision, monto_profesional,
+							cuenta_destino_profesional, cuenta_origen_servihogar,
 							timezone.now(), timezone.now()
 						],
 					)
 				
-				# ACTUALIZAR ESTADO DE LA SOLICITUD según el estado del pago
-				if estado_db == 'aprobado':
-					# Pago aprobado → La solicitud ya está en "pendiente", no hacer nada
-					logger.info(f"Pago aprobado para solicitud {external_reference}")
-				elif estado_db in ('rechazado', 'cancelado'):
-					# Pago rechazado/cancelado → Cancelar la solicitud
-					cur.execute(
-						"""
-						UPDATE solicitud_servicio
-						SET estado = 'cancelado', 
-						    cancelado_en = %s,
-						    razon_cancelacion = %s,
-						    actualizado_en = %s
-						WHERE id_solicitud_servicio = %s AND estado = 'pendiente'
-						""",
-						[timezone.now(), f"Pago {estado_db}: {mp_status_detail}", timezone.now(), external_reference]
-					)
-					logger.info(f"Solicitud {external_reference} cancelada por pago {estado_db}")
+			# ACTUALIZAR ESTADO DE LA SOLICITUD según el estado del pago
+			if estado_db == 'aprobado':
+				# Pago aprobado
+				logger.info(f"Pago aprobado para solicitud {external_reference}")
+				
+			elif estado_db in ('rechazado', 'cancelado'):
+				# Pago rechazado/cancelado → Cancelar la solicitud
+				cur.execute(
+					"""
+					UPDATE solicitud_servicio
+					SET estado = 'cancelado', 
+					    cancelado_en = %s,
+					    razon_cancelacion = %s,
+					    actualizado_en = %s
+					WHERE id_solicitud_servicio = %s AND estado = 'pendiente'
+					""",
+					[timezone.now(), f"Pago {estado_db}: {mp_status_detail}", timezone.now(), external_reference]
+				)
+				logger.info(f"Solicitud {external_reference} cancelada por pago {estado_db}")
 			
 			logger.info(f"Pago {payment_id} actualizado a estado {estado_db} para solicitud {external_reference}")
 			
@@ -640,8 +740,6 @@ def payment_status(request, request_id: str):
 		)
 
 
-@api_view(["POST"])
-@permission_classes([permissions.IsAuthenticated])
 @api_view(["POST"])
 @permission_classes([permissions.IsAuthenticated])
 def process_checkout_api_payment(request):
@@ -870,5 +968,282 @@ def process_checkout_api_payment(request):
 		logger.exception("Error procesando pago con Checkout API")
 		return Response(
 			{"message": "Error procesando el pago", "error": str(e)},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def process_refund(request, request_id: str):
+	"""
+	Procesa un reembolso a través de Mercado Pago para una solicitud cancelada.
+	Este endpoint debe ser llamado manualmente por un administrador o automáticamente
+	cuando se cancela un servicio con pago aprobado.
+	
+	Body esperado: {} (vacío)
+	
+	Retorna:
+	- ok: boolean
+	- refund_id: ID del reembolso en Mercado Pago
+	- amount: monto reembolsado
+	"""
+	try:
+		# Verificar que el usuario sea administrador
+		try:
+			dom = UsuarioDominio.objects.get(email=request.user.email)
+		except UsuarioDominio.DoesNotExist:
+			return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Verificar permisos (solo admin puede procesar reembolsos manualmente)
+		if not request.user.is_staff:
+			return Response({"message": "Solo administradores pueden procesar reembolsos"}, status=status.HTTP_403_FORBIDDEN)
+		
+		# Buscar el pago de la solicitud
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT 
+					p.id_pago_mercadopago,
+					p.monto,
+					p.estado,
+					p.reembolsado_en,
+					s.estado AS solicitud_estado,
+					s.rut_cliente
+				FROM pago p
+				INNER JOIN solicitud_servicio s ON s.id_solicitud_servicio = p.id_solicitud_servicio
+				WHERE p.id_solicitud_servicio = %s
+				ORDER BY p.creado_en DESC
+				LIMIT 1
+				""",
+				[request_id],
+			)
+			row = cur.fetchone()
+		
+		if not row:
+			return Response({"message": "No se encontró un pago para esta solicitud"}, status=status.HTTP_404_NOT_FOUND)
+		
+		payment_id, monto, pago_estado, reembolsado_en, solicitud_estado, rut_cliente = row
+		
+		# Validar que la solicitud esté cancelada
+		if solicitud_estado != 'cancelado':
+			return Response(
+				{"message": "Solo se pueden reembolsar solicitudes canceladas"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		# Validar que el pago esté aprobado y no haya sido reembolsado ya
+		if pago_estado != 'aprobado':
+			return Response(
+				{"message": f"El pago debe estar aprobado para reembolsar (estado actual: {pago_estado})"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		if reembolsado_en:
+			return Response(
+				{"message": "Este pago ya ha sido reembolsado"},
+				status=status.HTTP_409_CONFLICT
+			)
+		
+		# Verificar que el payment_id no sea un ID de preferencia
+		if payment_id.startswith('pref_') or payment_id.startswith('sim_'):
+			logger.warning(f"No se puede reembolsar pago simulado o preferencia: {payment_id}")
+			# Solo marcar como reembolsado en la DB
+			with connection.cursor() as cur:
+				cur.execute(
+					"""
+					UPDATE pago
+					SET estado = 'reembolsado',
+					    reembolsado_en = %s,
+					    monto_reembolso = monto,
+					    actualizado_en = %s
+					WHERE id_solicitud_servicio = %s
+					""",
+					[timezone.now(), timezone.now(), request_id],
+				)
+			
+			return Response({
+				"ok": True,
+				"refund_id": f"manual_{request_id[:8]}",
+				"amount": int(monto),
+				"message": "Reembolso marcado manualmente (pago simulado)",
+				"simulated": True
+			})
+		
+		# Procesar reembolso real con Mercado Pago
+		sdk = _get_mp_sdk()
+		
+		try:
+			# Crear reembolso en Mercado Pago
+			refund_response = sdk.refund().create(payment_id, {"amount": float(monto)})
+			
+			if refund_response["status"] not in (200, 201):
+				logger.error(f"Error creando reembolso en MP: {refund_response}")
+				return Response(
+					{"message": "Error al procesar reembolso en Mercado Pago", "detail": refund_response.get("response")},
+					status=status.HTTP_500_INTERNAL_SERVER_ERROR
+				)
+			
+			refund = refund_response["response"]
+			refund_id = refund.get("id")
+			refund_status = refund.get("status")
+			
+			logger.info(f"Reembolso MP creado: ID={refund_id}, Status={refund_status}")
+			
+			# Actualizar el pago en la DB
+			with connection.cursor() as cur:
+				cur.execute(
+					"""
+					UPDATE pago
+					SET estado = 'reembolsado',
+					    reembolsado_en = %s,
+					    monto_reembolso = %s,
+					    actualizado_en = %s
+					WHERE id_solicitud_servicio = %s
+					""",
+					[timezone.now(), int(monto), timezone.now(), request_id],
+				)
+			
+			logger.info(f"💸 Reembolso procesado: ${monto} (Solicitud {request_id}, Refund {refund_id})")
+			
+			return Response({
+				"ok": True,
+				"refund_id": refund_id,
+				"amount": int(monto),
+				"status": refund_status,
+				"message": "Reembolso procesado exitosamente"
+			})
+		
+		except Exception as e:
+			logger.error(f"Excepción al crear reembolso MP: {e}")
+			return Response(
+				{"message": f"Error al comunicarse con Mercado Pago: {str(e)}"},
+				status=status.HTTP_500_INTERNAL_SERVER_ERROR
+			)
+	
+	except Exception as e:
+		logger.exception("Error en process_refund")
+		return Response(
+			{"message": "Error procesando reembolso", "error": str(e)},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+
+
+@api_view(["POST"])
+@permission_classes([permissions.IsAuthenticated])
+def process_professional_payout(request, request_id: str):
+	"""
+	Procesa el pago al profesional después de que el servicio se marca como completado.
+	Este endpoint puede ser llamado manualmente por un administrador o automáticamente
+	por un proceso batch.
+	
+	Body esperado: {
+		"payment_method": "transferencia_bancaria" | "mercadopago",
+		"reference": "Referencia/número de transacción (opcional)"
+	}
+	
+	Retorna:
+	- ok: boolean
+	- payout_id: ID del pago al profesional
+	- amount: monto pagado
+	"""
+	try:
+		# Verificar que el usuario sea administrador
+		try:
+			dom = UsuarioDominio.objects.get(email=request.user.email)
+		except UsuarioDominio.DoesNotExist:
+			return Response({"message": "Usuario sin registro principal"}, status=status.HTTP_400_BAD_REQUEST)
+		
+		# Verificar permisos
+		if not request.user.is_staff:
+			return Response({"message": "Solo administradores pueden procesar pagos a profesionales"}, status=status.HTTP_403_FORBIDDEN)
+		
+		# Extraer datos del request
+		data = request.data or {}
+		payment_method = data.get('payment_method', 'transferencia_bancaria')
+		reference = data.get('reference', '').strip() or None
+		
+		# Buscar el registro de pago al profesional
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				SELECT 
+					pp.id_pago_profesional,
+					pp.monto_a_pagar,
+					pp.estado,
+					pp.rut_profesional,
+					p.liberado_al_profesional_en,
+					s.estado AS solicitud_estado
+				FROM pago_profesional pp
+				INNER JOIN pago p ON p.id_pago_mercadopago = pp.id_pago_mercadopago
+				INNER JOIN solicitud_servicio s ON s.id_solicitud_servicio = pp.id_solicitud_servicio
+				WHERE pp.id_solicitud_servicio = %s
+				ORDER BY pp.creado_en DESC
+				LIMIT 1
+				""",
+				[request_id],
+			)
+			row = cur.fetchone()
+		
+		if not row:
+			return Response({"message": "No se encontró un pago pendiente al profesional para esta solicitud"}, status=status.HTTP_404_NOT_FOUND)
+		
+		payout_id, monto, payout_estado, rut_prof, liberado_en, solicitud_estado = row
+		
+		# Validar que el servicio esté completado
+		if solicitud_estado != 'completado':
+			return Response(
+				{"message": "Solo se pueden pagar servicios completados"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		# Validar que el pago haya sido liberado
+		if not liberado_en:
+			return Response(
+				{"message": "El pago no ha sido liberado todavía"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		# Validar que no esté ya pagado
+		if payout_estado == 'pagado':
+			return Response(
+				{"message": "Este pago ya ha sido procesado"},
+				status=status.HTTP_409_CONFLICT
+			)
+		
+		# Actualizar el estado del pago al profesional
+		with connection.cursor() as cur:
+			cur.execute(
+				"""
+				UPDATE pago_profesional
+				SET estado = 'pagado',
+				    fecha_pagado = %s,
+				    fecha_procesado = %s,
+				    metodo_pago = %s,
+				    referencia_transaccion = %s,
+				    procesado_por = %s,
+				    actualizado_en = %s
+				WHERE id_pago_profesional = %s
+				""",
+				[
+					timezone.now(), timezone.now(), payment_method,
+					reference, dom.rut, timezone.now(), str(payout_id)
+				],
+			)
+		
+		logger.info(f"💰 Pago al profesional procesado: ${monto} para RUT {rut_prof} (Solicitud {request_id}, Método: {payment_method})")
+		
+		return Response({
+			"ok": True,
+			"payout_id": str(payout_id),
+			"amount": int(monto),
+			"professional_rut": rut_prof,
+			"payment_method": payment_method,
+			"message": "Pago al profesional procesado exitosamente"
+		})
+	
+	except Exception as e:
+		logger.exception("Error en process_professional_payout")
+		return Response(
+			{"message": "Error procesando pago al profesional", "error": str(e)},
 			status=status.HTTP_500_INTERNAL_SERVER_ERROR
 		)
