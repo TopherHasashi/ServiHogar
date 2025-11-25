@@ -50,11 +50,12 @@ def admin_dashboard_summary(request):
 		
 		with connection.cursor() as cur:
 			# 1. INGRESOS DEL MES (comisión de la plataforma)
+			# Solo pagos con estado 'aprobado', excluyendo cualquier otro estado
 			cur.execute(
 				"""
 				SELECT COALESCE(SUM(comision_plataforma), 0) as total_comision
 				FROM pago
-				WHERE estado = 'aprobado' 
+				WHERE estado = 'aprobado'
 				  AND creado_en >= %s
 				  AND creado_en < %s
 				""",
@@ -67,7 +68,7 @@ def admin_dashboard_summary(request):
 				"""
 				SELECT COALESCE(SUM(comision_plataforma), 0) as total_comision
 				FROM pago
-				WHERE estado = 'aprobado' 
+				WHERE estado = 'aprobado'
 				  AND creado_en >= %s
 				  AND creado_en < %s
 				""",
@@ -208,7 +209,8 @@ def admin_dashboard_summary(request):
 				FROM solicitud_servicio s
 				INNER JOIN servicio_profesional sp ON s.id_servicio_profesional = sp.id_servicio_profesional
 				INNER JOIN categoria_servicio c ON sp.id_categoria_servicio = c.id_categoria_servicio
-				LEFT JOIN pago p ON s.id_solicitud_servicio = p.id_solicitud_servicio AND p.estado = 'aprobado'
+				LEFT JOIN pago p ON s.id_solicitud_servicio = p.id_solicitud_servicio 
+					AND p.estado = 'aprobado'
 				WHERE s.creado_en >= %s
 				GROUP BY c.nombre
 				ORDER BY total_servicios DESC
@@ -323,7 +325,7 @@ def payment_metrics(request):
 		first_day_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 		
 		with connection.cursor() as cur:
-			# 1. Comisiones totales acumuladas
+			# 1. Comisiones totales acumuladas (solo pagos aprobados)
 			cur.execute("""
 				SELECT 
 					COALESCE(SUM(comision_plataforma), 0) AS comisiones_totales,
@@ -334,7 +336,7 @@ def payment_metrics(request):
 			row = cur.fetchone()
 			comisiones_totales, total_pagos = row
 			
-			# 2. Comisiones del mes actual
+			# 2. Comisiones del mes actual (solo pagos aprobados)
 			cur.execute("""
 				SELECT 
 					COALESCE(SUM(comision_plataforma), 0) AS comisiones_mes,
@@ -346,7 +348,7 @@ def payment_metrics(request):
 			row = cur.fetchone()
 			comisiones_mes, pagos_mes = row
 			
-			# 3. Dinero retenido actualmente (no liberado ni reembolsado)
+			# 3. Dinero retenido actualmente (aprobados no liberados ni reembolsados)
 			cur.execute("""
 				SELECT 
 					COALESCE(SUM(monto), 0) AS dinero_retenido,
@@ -359,7 +361,7 @@ def payment_metrics(request):
 			row = cur.fetchone()
 			dinero_retenido, pagos_retenidos = row
 			
-			# 4. Pagos liberados (completados)
+			# 4. Pagos liberados (solo aprobados y liberados)
 			cur.execute("""
 				SELECT 
 					COALESCE(SUM(monto_profesional), 0) AS total_liberado,
@@ -514,7 +516,7 @@ def get_payment_history(request):
 			cur.execute("SELECT COUNT(*) FROM pago")
 			total_count = cur.fetchone()[0]
 			
-			# Obtener estadísticas globales
+			# Obtener estadísticas globales (solo pagos aprobados)
 			cur.execute("""
 				SELECT 
 					COUNT(*) as total_aprobados,
@@ -594,5 +596,278 @@ def get_payment_history(request):
 		logger.exception("Error obteniendo historial de pagos")
 		return Response(
 			{"message": "Error obteniendo historial", "error": str(e)},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+
+
+@api_view(["GET"])
+@permission_classes([permissions.IsAuthenticated])
+def get_refunds_list(request):
+	"""
+	Obtiene lista de solicitudes canceladas con información de reembolsos.
+	Incluye razón de cancelación y estado del reembolso.
+	"""
+	# Verificar que el usuario sea administrador
+	try:
+		with connection.cursor() as cur:
+			cur.execute(
+				"SELECT rol FROM usuario WHERE email = %s",
+				[request.user.email]
+			)
+			row = cur.fetchone()
+			if not row or row[0] != 'administrador':
+				return Response(
+					{"message": "Acceso denegado. Solo administradores."},
+					status=status.HTTP_403_FORBIDDEN
+				)
+	except Exception as e:
+		logger.error(f"Error verificando rol de administrador: {e}")
+		return Response(
+			{"message": "Error verificando permisos"},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+	
+	try:
+		page = int(request.GET.get('page', 1))
+		page_size = int(request.GET.get('page_size', 10))
+		offset = (page - 1) * page_size
+		
+		with connection.cursor() as cur:
+			# Contar total de solicitudes canceladas
+			cur.execute("SELECT COUNT(*) FROM solicitud_servicio WHERE estado = 'cancelado'")
+			total_count = cur.fetchone()[0]
+			
+			# Obtener estadísticas
+			cur.execute("""
+				SELECT 
+					COUNT(*) as total_canceladas,
+					COUNT(CASE WHEN p.estado IN ('aprobado', 'en_revision') AND p.reembolsado_en IS NULL THEN 1 END) as pendiente_reembolso,
+					COUNT(CASE WHEN p.reembolsado_en IS NOT NULL THEN 1 END) as reembolsadas,
+					COALESCE(SUM(CASE WHEN p.estado IN ('aprobado', 'en_revision') AND p.reembolsado_en IS NULL THEN p.monto ELSE 0 END), 0) as monto_pendiente,
+					COALESCE(SUM(CASE WHEN p.reembolsado_en IS NOT NULL THEN p.monto_reembolso ELSE 0 END), 0) as monto_reembolsado
+				FROM solicitud_servicio ss
+				LEFT JOIN pago p ON p.id_solicitud_servicio = ss.id_solicitud_servicio
+				WHERE ss.estado = 'cancelado'
+			""")
+			stats_row = cur.fetchone()
+			
+			estadisticas = {
+				"total_canceladas": stats_row[0] if stats_row else 0,
+				"pendiente_reembolso": stats_row[1] if stats_row else 0,
+				"reembolsadas": stats_row[2] if stats_row else 0,
+				"monto_total_reembolsar": int(stats_row[3]) if stats_row and stats_row[3] else 0,
+				"monto_total_reembolsado": int(stats_row[4]) if stats_row and stats_row[4] else 0
+			}
+			
+			# Obtener lista paginada de solicitudes canceladas
+			cur.execute("""
+				SELECT 
+					ss.id_solicitud_servicio,
+					ss.titulo,
+					ss.fecha_programada,
+					ss.cancelado_en,
+					ss.razon_cancelacion,
+					-- Cliente
+					COALESCE(uc.nombres || ' ' || uc.apellidos, 'Cliente Desconocido') AS cliente_nombre,
+					uc.email AS cliente_email,
+					-- Profesional
+					COALESCE(up.nombres || ' ' || up.apellidos, 'Profesional Desconocido') AS profesional_nombre,
+					up.email AS profesional_email,
+					-- Servicio
+					COALESCE(cs.nombre, 'Servicio Desconocido') AS servicio_nombre,
+					-- Pago
+					COALESCE(p.monto, 0) AS monto,
+					COALESCE(p.monto_reembolso, 0) AS monto_reembolso,
+					COALESCE(p.estado, 'sin_pago') AS estado_pago,
+					COALESCE(p.metodo_pago, 'N/A') AS metodo_pago,
+					p.reembolsado_en,
+					ss.rut_cliente,
+					ss.rut_profesional
+				FROM solicitud_servicio ss
+				LEFT JOIN usuario uc ON uc.rut = ss.rut_cliente
+				LEFT JOIN usuario up ON up.rut = ss.rut_profesional
+				LEFT JOIN servicio_profesional sp ON sp.id_servicio_profesional = ss.id_servicio_profesional
+				LEFT JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
+				LEFT JOIN pago p ON p.id_solicitud_servicio = ss.id_solicitud_servicio
+				WHERE ss.estado = 'cancelado'
+				ORDER BY ss.cancelado_en DESC
+				LIMIT %s OFFSET %s
+			""", [page_size, offset])
+			
+			rows = cur.fetchall()
+			
+			solicitudes = []
+			for row in rows:
+				# Determinar quién canceló basado en la razón de cancelación
+				cancelado_por = "Sistema"
+				if row[4]:  # razon_cancelacion
+					razon_lower = row[4].lower()
+					if "cliente" in razon_lower or "client" in razon_lower:
+						cancelado_por = "Cliente"
+					elif "profesional" in razon_lower or "professional" in razon_lower:
+						cancelado_por = "Profesional"
+				
+				monto_original = int(row[10]) if row[10] else 0
+				monto_reembolso = int(row[11]) if row[11] else 0
+				
+				solicitudes.append({
+					"id_solicitud_servicio": str(row[0]),
+					"titulo": row[1] or "Sin título",
+					"fecha_programada": row[2].isoformat() if row[2] else None,
+					"cancelado_en": row[3].isoformat() if row[3] else None,
+					"razon_cancelacion": row[4] or "Sin razón especificada",
+					"cliente_nombre": row[5],
+					"cliente_email": row[6] or "N/A",
+					"profesional_nombre": row[7],
+					"profesional_email": row[8] or "N/A",
+					"servicio_nombre": row[9],
+					"monto": monto_original,
+					"monto_reembolso": monto_reembolso,
+					"estado_pago": row[12],
+					"metodo_pago": row[13],
+					"reembolsado_en": row[14].isoformat() if row[14] else None,
+					"cancelado_por": cancelado_por
+				})
+			
+			total_pages = (total_count + page_size - 1) // page_size
+			
+			return Response({
+				"solicitudes": solicitudes,
+				"total": total_count,
+				"page": page,
+				"total_pages": total_pages,
+				"estadisticas": estadisticas
+			})
+			
+	except Exception as e:
+		logger.exception("Error obteniendo lista de reembolsos")
+		return Response(
+			{"message": "Error obteniendo datos de reembolsos", "error": str(e)},
+			status=status.HTTP_500_INTERNAL_SERVER_ERROR
+		)
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def process_refund(request):
+	"""
+	Procesa un reembolso para una solicitud cancelada.
+	Actualiza el estado del pago según el porcentaje de reembolso.
+	"""
+	try:
+		# Verificar si el usuario es admin
+		with connection.cursor() as cursor:
+			cursor.execute("""
+				SELECT rol FROM usuario WHERE email = %s
+			""", [request.user.email])
+			user = cursor.fetchone()
+			
+			if not user or user[0] != 'administrador':
+				return Response(
+					{"message": "No tienes permisos para realizar esta acción"},
+					status=status.HTTP_403_FORBIDDEN
+				)
+		
+		# Obtener datos de la petición
+		solicitud_id = request.data.get('solicitud_id')
+		porcentaje_reembolso = request.data.get('porcentaje_reembolso')
+		
+		if not solicitud_id:
+			return Response(
+				{"message": "ID de solicitud es requerido"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		if porcentaje_reembolso is None:
+			return Response(
+				{"message": "Porcentaje de reembolso es requerido"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		# Validar porcentaje
+		if porcentaje_reembolso not in [0, 50, 100]:
+			return Response(
+				{"message": "Porcentaje de reembolso debe ser 0, 50 o 100"},
+				status=status.HTTP_400_BAD_REQUEST
+			)
+		
+		with connection.cursor() as cursor:
+			# Verificar que la solicitud existe y está cancelada
+			cursor.execute("""
+				SELECT ss.id_solicitud_servicio, ss.estado, p.id_pago_mercadopago, p.monto, p.reembolsado_en
+				FROM solicitud_servicio ss
+				LEFT JOIN pago p ON ss.id_solicitud_servicio = p.id_solicitud_servicio
+				WHERE ss.id_solicitud_servicio = %s
+			""", [solicitud_id])
+			
+			solicitud = cursor.fetchone()
+			
+			if not solicitud:
+				return Response(
+					{"message": "Solicitud no encontrada"},
+					status=status.HTTP_404_NOT_FOUND
+				)
+			
+			if solicitud[1] != 'cancelado':
+				return Response(
+					{"message": "Solo se pueden procesar reembolsos para solicitudes canceladas"},
+					status=status.HTTP_400_BAD_REQUEST
+				)
+			
+			if solicitud[4]:  # Ya fue reembolsado
+				return Response(
+					{"message": "Esta solicitud ya fue reembolsada anteriormente"},
+					status=status.HTTP_400_BAD_REQUEST
+				)
+			
+			pago_id = solicitud[2]
+			monto_original = solicitud[3]
+			
+			if not pago_id:
+				return Response(
+					{"message": "No se encontró un pago asociado a esta solicitud"},
+					status=status.HTTP_404_NOT_FOUND
+				)
+			
+			# Calcular monto a reembolsar
+			monto_reembolso = int((monto_original * porcentaje_reembolso) / 100)
+			
+			# Actualizar el pago
+			if porcentaje_reembolso > 0:
+				# Marcar como reembolsado
+				cursor.execute("""
+					UPDATE pago 
+					SET estado = 'reembolsado',
+						reembolsado_en = CURRENT_TIMESTAMP,
+						monto_reembolso = %s
+					WHERE id_pago_mercadopago = %s
+				""", [monto_reembolso, pago_id])
+				
+				message = f"Reembolso del {porcentaje_reembolso}% procesado exitosamente. Monto: ${monto_reembolso:,.0f}"
+			else:
+				# No se reembolsa, actualizar estado
+				cursor.execute("""
+					UPDATE pago 
+					SET estado = 'cancelado',
+						reembolsado_en = CURRENT_TIMESTAMP,
+						monto_reembolso = 0
+					WHERE id_pago_mercadopago = %s
+				""", [pago_id])
+				
+				message = "Solicitud marcada como no reembolsable"
+			
+			connection.commit()
+			
+			return Response({
+				"success": True,
+				"message": message,
+				"monto_reembolsado": monto_reembolso,
+				"porcentaje": porcentaje_reembolso
+			})
+			
+	except Exception as e:
+		connection.rollback()
+		return Response(
+			{"message": "Error procesando el reembolso", "error": str(e)},
 			status=status.HTTP_500_INTERNAL_SERVER_ERROR
 		)

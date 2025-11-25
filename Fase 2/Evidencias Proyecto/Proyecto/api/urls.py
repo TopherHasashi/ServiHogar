@@ -50,6 +50,8 @@ from .admin_views import (
     admin_dashboard_summary,
     payment_metrics,
     get_payment_history,
+    get_refunds_list,
+    process_refund as admin_process_refund,
 )
 from .bank_account_views import (
     get_servihogar_bank_accounts,
@@ -127,6 +129,8 @@ urlpatterns = [
     path("admin/dashboard/summary/", admin_dashboard_summary, name="admin_dashboard_summary"),
     path("admin/payment-metrics/", payment_metrics, name="payment_metrics"),
     path("admin/payments/", get_payment_history, name="get_payment_history"),
+    path("admin/refunds/", get_refunds_list, name="get_refunds_list"),
+    path("admin/process-refund/", admin_process_refund, name="admin_process_refund"),
     # Bank Accounts ServiHogar
     path("admin/bank-accounts/", get_servihogar_bank_accounts, name="get_servihogar_bank_accounts"),
     path("admin/bank-accounts/create/", create_servihogar_bank_account, name="create_servihogar_bank_account"),

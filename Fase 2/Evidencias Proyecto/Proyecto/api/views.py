@@ -3204,8 +3204,23 @@ def booking_confirm(request, request_id: str):
 @permission_classes([permissions.IsAuthenticated])
 def booking_cancel(request, request_id: str):
 	"""Cliente o profesional cancela una solicitud. Cambia estado a 'cancelado' y setea cancelado_en/razon_cancelacion.
+	Requiere razón de cancelación obligatoria con mínimo 20 caracteres.
 	"""
-	reason = (request.data.get('razon') or '').strip() or None
+	# Obtener y validar razón de cancelación
+	reason = (request.data.get('razon') or '').strip()
+	
+	if not reason:
+		return Response(
+			{"message": "La razón de cancelación es obligatoria"}, 
+			status=status.HTTP_400_BAD_REQUEST
+		)
+	
+	if len(reason) < 20:
+		return Response(
+			{"message": "La razón de cancelación debe tener al menos 20 caracteres"}, 
+			status=status.HTTP_400_BAD_REQUEST
+		)
+	
 	# Resolver rut del usuario autenticado
 	try:
 		dom = UsuarioDominio.objects.get(email=request.user.email)
@@ -3241,7 +3256,7 @@ def booking_cancel(request, request_id: str):
 			[timezone.now(), reason, timezone.now(), request_id],
 		)
 		
-		# Buscar pago aprobado y no liberado para reembolsar
+		# Buscar pago aprobado y no liberado para marcar como en revisión
 		cur.execute(
 			"""
 			SELECT id_pago_mercadopago, monto
@@ -3256,59 +3271,25 @@ def booking_cancel(request, request_id: str):
 		
 		if refund_row:
 			payment_id, monto = refund_row
-			logger.info(f"💸 Iniciando reembolso automático: ${monto} al cliente (Solicitud {request_id}, Pago {payment_id})")
+			logger.info(f"� Marcando pago como 'en_revision' para evaluación manual: ${monto} (Solicitud {request_id}, Pago {payment_id})")
 			
-			# Procesar reembolso AUTOMÁTICAMENTE vía Mercado Pago
-			refund_success = False
-			refund_error = None
-			
-			# Verificar si es un pago simulado o de preferencia (no se puede reembolsar vía API)
-			if payment_id.startswith('pref_') or payment_id.startswith('sim_'):
-				logger.warning(f"Pago simulado {payment_id}, marcando como reembolsado sin llamar a MP")
-				refund_success = True
-			else:
-				# Llamar a Mercado Pago Refunds API
-				try:
-					from .payments import _get_mp_sdk
-					sdk = _get_mp_sdk()
-					
-					refund_response = sdk.refund().create(payment_id, {"amount": float(monto)})
-					
-					if refund_response["status"] in (200, 201):
-						refund_id = refund_response["response"].get("id")
-						logger.info(f"✅ Reembolso MP creado: ID={refund_id}, Monto=${monto}")
-						refund_success = True
-					else:
-						logger.error(f"❌ Error al crear reembolso MP: {refund_response}")
-						refund_error = refund_response.get("response", {}).get("message", "Error desconocido")
-				except Exception as e:
-					logger.error(f"❌ Excepción al procesar reembolso MP: {e}")
-					refund_error = str(e)
-					# En caso de error, marcamos como reembolsado de todas formas para no bloquear
-					# El admin puede revisar los logs y procesar manualmente si es necesario
-					refund_success = True
-			
-			# Actualizar pago en DB
-			if refund_success:
-				cur.execute(
-					"""
-					UPDATE pago
-					SET estado = 'reembolsado',
-					    reembolsado_en = %s,
-					    monto_reembolso = %s,
-					    actualizado_en = %s
-					WHERE id_solicitud_servicio = %s
-					""",
-					[timezone.now(), int(monto), timezone.now(), request_id],
-				)
-				logger.info(f"💸 Reembolso automático completado: ${monto} (Solicitud {request_id})")
+			# Actualizar pago a estado "en_revision" para que el admin decida qué hacer
+			cur.execute(
+				"""
+				UPDATE pago
+				SET estado = 'en_revision',
+				    actualizado_en = %s
+				WHERE id_solicitud_servicio = %s
+				""",
+				[timezone.now(), request_id],
+			)
+			logger.info(f"✅ Pago marcado como 'en_revision'. Admin debe decidir porcentaje de reembolso.")
 
 	return Response({
 		"ok": True, 
 		"id_solicitud_servicio": request_id, 
 		"estado": "cancelado",
-		"refund_processed": bool(refund_row),
-		"refund_error": refund_error if 'refund_error' in locals() and refund_error else None
+		"payment_status": "en_revision" if refund_row else "sin_pago"
 	})
 
 	
@@ -3553,7 +3534,15 @@ def my_requests(request):
 				LEFT JOIN comuna c ON c.id_comuna = uc.id_comuna
 				LEFT JOIN region r ON r.id_region = c.id_region
 				WHERE s.rut_profesional = %s
-				ORDER BY s.fecha_programada DESC
+				ORDER BY 
+					CASE s.estado
+						WHEN 'pendiente' THEN 1
+						WHEN 'confirmado' THEN 2
+						WHEN 'completado' THEN 3
+						WHEN 'cancelado' THEN 4
+						ELSE 5
+					END,
+					s.fecha_programada DESC
 				""",
 				[dom.rut],
 			)
@@ -3603,7 +3592,15 @@ def my_requests(request):
 				LEFT JOIN region r ON r.id_region = c.id_region
 				LEFT JOIN resena re ON re.id_solicitud_servicio = s.id_solicitud_servicio
 				WHERE s.rut_cliente = %s
-				ORDER BY s.fecha_programada DESC
+				ORDER BY 
+					CASE s.estado
+						WHEN 'pendiente' THEN 1
+						WHEN 'confirmado' THEN 2
+						WHEN 'completado' THEN 3
+						WHEN 'cancelado' THEN 4
+						ELSE 5
+					END,
+					s.fecha_programada DESC
 				""",
 				[dom.rut],
 			)

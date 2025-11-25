@@ -4,6 +4,8 @@ import { Button } from "../../ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/tabs"
 import { Badge } from "../../ui/badge"
 import { Alert, AlertDescription } from "../../ui/alert"
+import { Textarea } from "../../ui/textarea"
+import { Label } from "../../ui/label"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +26,8 @@ import {
   Star,
   MapPin,
   Phone,
-  AlertCircle
+  AlertCircle,
+  AlertTriangle
 } from "lucide-react"
 
 interface RequestsTabProps {
@@ -33,8 +36,8 @@ interface RequestsTabProps {
   onMarkAsCompleted: (requestId: string) => void
   onSubmitReview: (reviewData: any) => void
   onConfirmBooking?: (id: string) => void
-  onCancelBooking?: (id: string) => void
-  onCancelClient?: (id: string) => void
+  onCancelBooking?: (id: string, reason: string) => void
+  onCancelClient?: (id: string, reason: string) => void
 }
 
 export default function RequestsTab({ 
@@ -49,6 +52,13 @@ export default function RequestsTab({
   const [requestsTab, setRequestsTab] = useState("client")
   const [showReviewModal, setShowReviewModal] = useState(false)
   const [selectedServiceForReview, setSelectedServiceForReview] = useState<any>(null)
+  
+  // Estados para controlar el diálogo de cancelación
+  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
+  const [cancelReason, setCancelReason] = useState("")
+  const [cancelReasonError, setCancelReasonError] = useState("")
+  const [currentCancelId, setCurrentCancelId] = useState<string | null>(null)
+  const [cancelType, setCancelType] = useState<"client" | "professional">("client")
   
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -76,6 +86,41 @@ export default function RequestsTab({
   const handleSubmitReview = (reviewData: any) => {
     onSubmitReview(reviewData)
     handleCloseReviewModal()
+  }
+
+  const handleOpenCancelDialog = (id: string, type: "client" | "professional") => {
+    setCurrentCancelId(id)
+    setCancelType(type)
+    setCancelReason("")
+    setCancelReasonError("")
+    setCancelDialogOpen(true)
+  }
+
+  const handleCloseCancelDialog = () => {
+    setCancelDialogOpen(false)
+    setCurrentCancelId(null)
+    setCancelReason("")
+    setCancelReasonError("")
+  }
+
+  const handleConfirmCancel = () => {
+    // Validar que la razón tenga al menos 20 caracteres
+    if (cancelReason.trim().length < 20) {
+      setCancelReasonError("La razón debe tener al menos 20 caracteres")
+      return
+    }
+
+    // Ejecutar la cancelación según el tipo
+    if (currentCancelId) {
+      if (cancelType === "client") {
+        onCancelClient?.(currentCancelId, cancelReason.trim())
+      } else {
+        onCancelBooking?.(currentCancelId, cancelReason.trim())
+      }
+    }
+
+    // Cerrar el diálogo
+    handleCloseCancelDialog()
   }
 
   return (
@@ -148,34 +193,13 @@ export default function RequestsTab({
                           
                           <div className="flex flex-wrap gap-2">
                             {(request.status === "Pendiente" || request.status === "Confirmado") && (
-                              <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                  <Button variant="destructive" size="sm">Cancelar</Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                  <AlertDialogHeader>
-                                    <AlertDialogTitle>¿Cancelar esta solicitud?</AlertDialogTitle>
-                                    <AlertDialogDesc>
-                                      Esta acción liberará el cupo y no podrás revertirla.
-                                    </AlertDialogDesc>
-                                    <div className="mt-3 space-y-1 text-sm text-gray-600">
-                                      <div><span className="font-medium text-gray-800">Servicio:</span> {request.service}</div>
-                                      <div><span className="font-medium text-gray-800">Profesional:</span> {request.professional}</div>
-                                      <div><span className="font-medium text-gray-800">Fecha:</span> {request.date}</div>
-                                      <div><span className="font-medium text-gray-800">Hora:</span> {request.time}</div>
-                                      {(request.comuna || request.region) && (
-                                        <div><span className="font-medium text-gray-800">Ubicación:</span> {request.comuna}{request.region ? `, ${request.region}` : ''}</div>
-                                      )}
-                                    </div>
-                                  </AlertDialogHeader>
-                                  <AlertDialogFooter>
-                                    <AlertDialogCancel>Volver</AlertDialogCancel>
-                                    <AlertDialogAction onClick={() => onCancelClient?.(request.id)} className="bg-red-600 hover:bg-red-700">
-                                      Sí, cancelar
-                                    </AlertDialogAction>
-                                  </AlertDialogFooter>
-                                </AlertDialogContent>
-                              </AlertDialog>
+                              <Button 
+                                variant="destructive" 
+                                size="sm"
+                                onClick={() => handleOpenCancelDialog(request.id, "client")}
+                              >
+                                Cancelar
+                              </Button>
                             )}
                             
                             {request.status === "Confirmado" && (
@@ -296,71 +320,23 @@ export default function RequestsTab({
                                   <Button size="sm" onClick={() => onConfirmBooking?.(booking.id)} className="bg-green-600 hover:bg-green-700">
                                     Aceptar
                                   </Button>
-                                  <AlertDialog>
-                                    <AlertDialogTrigger asChild>
-                                      <Button size="sm" variant="destructive">Cancelar</Button>
-                                    </AlertDialogTrigger>
-                                    <AlertDialogContent>
-                                      <AlertDialogHeader>
-                                        <AlertDialogTitle>¿Cancelar esta solicitud?</AlertDialogTitle>
-                                        <AlertDialogDesc>
-                                          El cliente será notificado y el cupo quedará libre.
-                                        </AlertDialogDesc>
-                                        <div className="mt-3 space-y-1 text-sm text-gray-600">
-                                          <div><span className="font-medium text-gray-800">Servicio:</span> {booking.service}</div>
-                                          <div><span className="font-medium text-gray-800">Cliente:</span> {booking.client}</div>
-                                          <div><span className="font-medium text-gray-800">Fecha:</span> {booking.date}</div>
-                                          <div><span className="font-medium text-gray-800">Hora:</span> {booking.time}</div>
-                                          {booking.address && (
-                                            <div><span className="font-medium text-gray-800">Dirección:</span> {booking.address}</div>
-                                          )}
-                                          {(booking.comuna || booking.region) && (
-                                            <div><span className="font-medium text-gray-800">Ubicación:</span> {booking.comuna}{booking.region ? `, ${booking.region}` : ''}</div>
-                                          )}
-                                        </div>
-                                      </AlertDialogHeader>
-                                      <AlertDialogFooter>
-                                        <AlertDialogCancel>Volver</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => onCancelBooking?.(booking.id)} className="bg-red-600 hover:bg-red-700">
-                                          Sí, cancelar
-                                        </AlertDialogAction>
-                                      </AlertDialogFooter>
-                                    </AlertDialogContent>
-                                  </AlertDialog>
+                                  <Button 
+                                    size="sm" 
+                                    variant="destructive"
+                                    onClick={() => handleOpenCancelDialog(booking.id, "professional")}
+                                  >
+                                    Cancelar
+                                  </Button>
                                 </>
                               )}
                               {booking.status === "Confirmado" && (
-                                <AlertDialog>
-                                  <AlertDialogTrigger asChild>
-                                    <Button size="sm" variant="destructive">Cancelar</Button>
-                                  </AlertDialogTrigger>
-                                  <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                      <AlertDialogTitle>¿Cancelar esta solicitud?</AlertDialogTitle>
-                                      <AlertDialogDesc>
-                                        El cliente será notificado y el cupo quedará libre.
-                                      </AlertDialogDesc>
-                                      <div className="mt-3 space-y-1 text-sm text-gray-600">
-                                        <div><span className="font-medium text-gray-800">Servicio:</span> {booking.service}</div>
-                                        <div><span className="font-medium text-gray-800">Cliente:</span> {booking.client}</div>
-                                        <div><span className="font-medium text-gray-800">Fecha:</span> {booking.date}</div>
-                                        <div><span className="font-medium text-gray-800">Hora:</span> {booking.time}</div>
-                                        {booking.address && (
-                                          <div><span className="font-medium text-gray-800">Dirección:</span> {booking.address}</div>
-                                        )}
-                                        {(booking.comuna || booking.region) && (
-                                          <div><span className="font-medium text-gray-800">Ubicación:</span> {booking.comuna}{booking.region ? `, ${booking.region}` : ''}</div>
-                                        )}
-                                      </div>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                      <AlertDialogCancel>Volver</AlertDialogCancel>
-                                      <AlertDialogAction onClick={() => onCancelBooking?.(booking.id)} className="bg-red-600 hover:bg-red-700">
-                                        Sí, cancelar
-                                      </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                  </AlertDialogContent>
-                                </AlertDialog>
+                                <Button 
+                                  size="sm" 
+                                  variant="destructive"
+                                  onClick={() => handleOpenCancelDialog(booking.id, "professional")}
+                                >
+                                  Cancelar
+                                </Button>
                               )}
                             </div>
                           </div>
@@ -374,6 +350,78 @@ export default function RequestsTab({
           </Tabs>
         </CardContent>
       </Card>
+
+      {/* Diálogo de Cancelación con Razón Obligatoria */}
+      <AlertDialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+              ¿Cancelar esta {cancelType === "client" ? "solicitud" : "reserva"}?
+            </AlertDialogTitle>
+            <AlertDialogDesc>
+              {cancelType === "client" 
+                ? "El profesional será notificado y el cupo quedará libre."
+                : "El cliente será notificado y el cupo quedará libre."}
+            </AlertDialogDesc>
+          </AlertDialogHeader>
+
+          <div className="space-y-4 py-4">
+            {cancelType === "client" && (
+              <Alert className="border-blue-200 bg-blue-50">
+                <AlertCircle className="h-4 w-4 text-blue-600" />
+                <AlertDescription className="text-blue-800 text-sm">
+                  <strong>Información de reembolso:</strong> Si este servicio fue pagado, 
+                  el reembolso será procesado y emitido en un plazo de 3 a 9 días hábiles.
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="cancel-reason" className="text-sm font-medium">
+                Razón de cancelación <span className="text-red-600">*</span>
+              </Label>
+              <Textarea
+                id="cancel-reason"
+                placeholder="Explica el motivo de la cancelación (mínimo 20 caracteres)..."
+                value={cancelReason}
+                onChange={(e) => {
+                  setCancelReason(e.target.value)
+                  if (e.target.value.trim().length >= 20) {
+                    setCancelReasonError("")
+                  }
+                }}
+                className={`min-h-[100px] resize-none ${cancelReasonError ? 'border-red-500' : ''}`}
+              />
+              <div className="flex justify-between items-center text-xs">
+                <span className={`${
+                  cancelReason.trim().length < 20 
+                    ? 'text-gray-500' 
+                    : 'text-green-600 font-medium'
+                }`}>
+                  {cancelReason.trim().length} / 20 caracteres mínimos
+                </span>
+                {cancelReasonError && (
+                  <span className="text-red-600">{cancelReasonError}</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleCloseCancelDialog}>
+              Volver
+            </AlertDialogCancel>
+            <Button
+              onClick={handleConfirmCancel}
+              className="bg-red-600 hover:bg-red-700"
+              disabled={cancelReason.trim().length < 20}
+            >
+              Sí, cancelar
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Modal de Reseñas */}
       {showReviewModal && selectedServiceForReview && (

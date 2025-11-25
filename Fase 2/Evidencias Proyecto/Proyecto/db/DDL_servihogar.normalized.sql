@@ -241,7 +241,7 @@ CREATE TABLE pago (
     id_cuenta_origen_servihogar UUID REFERENCES cuenta_bancaria_servihogar(id_cuenta_bancaria_servihogar),
     monto INTEGER NOT NULL CHECK (monto > 0),
     metodo_pago VARCHAR(50),
-    estado VARCHAR(20) DEFAULT 'pendiente' CHECK (estado IN ('pendiente','aprobado','autorizado','en_proceso','rechazado','cancelado','reembolsado')),
+    estado VARCHAR(20) DEFAULT 'pendiente' CHECK (estado IN ('pendiente','aprobado','autorizado','en_proceso','rechazado','cancelado','reembolsado','en_revision')),
     comision_plataforma INTEGER DEFAULT 0,
     monto_profesional INTEGER DEFAULT 0,
     liberado_al_profesional_en TIMESTAMP,

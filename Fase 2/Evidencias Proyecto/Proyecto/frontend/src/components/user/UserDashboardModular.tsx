@@ -113,24 +113,26 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
     }
   }
 
-  const handleCancelBooking = async (id: string) => {
+  const handleCancelBooking = async (id: string, reason: string) => {
     try {
-      await apiPost(`/api/requests/${id}/cancel/`, { razon: 'Cancelado por profesional' }, { auth: true })
+      await apiPost(`/api/requests/${id}/cancel/`, { razon: reason }, { auth: true })
       setProfessionalBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'Cancelado' } : b))
-    } catch (e) {
+    } catch (e: any) {
       console.error('No se pudo cancelar la solicitud', e)
-      alert('No se pudo cancelar la solicitud. Intenta nuevamente.')
+      const errorMsg = e?.response?.data?.message || 'No se pudo cancelar la solicitud. Intenta nuevamente.'
+      alert(errorMsg)
     }
   }
 
   // Cancelación por parte del cliente en "Mis Solicitudes"
-  const handleCancelClientRequest = async (id: string) => {
+  const handleCancelClientRequest = async (id: string, reason: string) => {
     try {
-      await apiPost(`/api/requests/${id}/cancel/`, { razon: 'Cancelado por cliente' }, { auth: true })
+      await apiPost(`/api/requests/${id}/cancel/`, { razon: reason }, { auth: true })
       setServiceRequests(prev => prev.map(r => r.id === id ? { ...r, status: 'Cancelado' } : r))
-    } catch (e) {
+    } catch (e: any) {
       console.error('No se pudo cancelar la solicitud (cliente)', e)
-      alert('No se pudo cancelar la solicitud. Intenta nuevamente.')
+      const errorMsg = e?.response?.data?.message || 'No se pudo cancelar la solicitud. Intenta nuevamente.'
+      alert(errorMsg)
     }
   }
 

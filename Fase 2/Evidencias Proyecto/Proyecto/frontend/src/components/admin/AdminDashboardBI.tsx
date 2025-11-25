@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from "../ui/alert"
 import ServihogarBankAccountManager from "./ServihogarBankAccountManager"
 import OperationsCenter from "./OperationsCenter"
 import PaymentHistory from "./PaymentHistory"
+import RefundsManagement from "./RefundsManagement"
 import { apiGetAuth, apiPutAuth } from "../../lib/api"
 import { 
   Users, 
@@ -248,9 +249,10 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
         {/* Dashboard Content */}
         {!loading && !error && (
           <Tabs defaultValue="overview" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-5">
+            <TabsList className="grid w-full grid-cols-6">
               <TabsTrigger value="overview">Resumen Ejecutivo</TabsTrigger>
               <TabsTrigger value="operations">Centro de Operaciones</TabsTrigger>
+              <TabsTrigger value="refunds">Reembolsos</TabsTrigger>
               <TabsTrigger value="banking">Cuentas Bancarias</TabsTrigger>
               <TabsTrigger value="payments">Historial Pagos</TabsTrigger>
               <TabsTrigger value="config">Configuración</TabsTrigger>
@@ -474,6 +476,16 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
             </div>
 
             <OperationsCenter />
+          </TabsContent>
+
+          {/* TAB: REEMBOLSOS */}
+          <TabsContent value="refunds" className="space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold">Gestión de Reembolsos</h2>
+              <p className="text-gray-600">Solicitudes canceladas y reembolsos procesados</p>
+            </div>
+
+            <RefundsManagement />
           </TabsContent>
 
           {/* TAB: CUENTAS BANCARIAS */}
