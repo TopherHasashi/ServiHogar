@@ -10,7 +10,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar"
 import { Alert, AlertDescription } from "../ui/alert"
 import { Separator } from "../ui/separator"
 import { Calendar } from "../ui/calendar"
-import CheckoutForm from "../payments/CheckoutForm"
 import { 
   Calendar as CalendarIcon, 
   Clock, 
@@ -18,10 +17,8 @@ import {
   Star,
   CheckCircle,
   ArrowLeft,
-  CreditCard,
   AlertCircle,
   MessageSquare,
-  
 } from "lucide-react"
 
 interface Professional {
@@ -89,7 +86,7 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
   const [selectedDate, setSelectedDate] = useState<Date>()
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<TimeSlot | null>(null)
   const [selectedDuration] = useState<number>(professional.fixedDuration || professional.minDuration || 60)
-  const [bookingStep, setBookingStep] = useState<'datetime' | 'details' | 'payment' | 'confirmation'>('datetime')
+  const [bookingStep, setBookingStep] = useState<'datetime' | 'details' | 'confirmation'>('datetime')
   const [serviceDetails, setServiceDetails] = useState({
     address: '',
     description: '',
@@ -108,8 +105,7 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
     }
   }, [user])
   const [isBooking, setIsBooking] = useState(false)
-  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null)
-  const [paymentError, setPaymentError] = useState<string | null>(null)
+  const [bookingError, setBookingError] = useState<string | null>(null)
 
   // Horario por defecto si no está definido
   const getDefaultWeeklySchedule = (): WeeklySchedule => ({
@@ -253,75 +249,50 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
     return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' })
   }
 
-  // Función para crear la reserva y preparar el pago
-  const handlePrepareBooking = async () => {
+  // Envía la solicitud de reserva directamente; el trabajador deberá confirmarla
+  const handleSubmitBooking = async () => {
     setIsBooking(true)
-    setPaymentError(null)
-    
+    setBookingError(null)
+
     try {
       const isoDate = selectedDate?.toISOString().split('T')[0]
       const start = selectedTimeSlot?.start
-      
+
       if (!isoDate || !start) {
         throw new Error('Faltan fecha u hora')
       }
-      
-      // Crear la solicitud con pago pendiente
-      const response = await apiPost(`/api/payments/book/${professional.id}/`, {
+
+      const response = await apiPost(`/api/services/${professional.id}/book/`, {
         date: isoDate,
         start,
-        duracion_minutos: selectedDuration,
         titulo: `Reserva de ${professional.service}`,
         descripcion: serviceDetails.description || `Reserva con ${professional.name}`,
         address: serviceDetails.address || '',
-        comuna_name: user?.district || '',
-        region_name: user?.region || '',
+        region: user?.region || '',
+        district: user?.district || '',
       }, { auth: true })
-      
-      if (!response.request_id) {
-        throw new Error('No se recibió ID de solicitud')
+
+      if (!response.id_solicitud_servicio) {
+        throw new Error('No se recibió confirmación de la solicitud')
       }
-      
-      // Guardar el ID de la solicitud y continuar al formulario de pago
-      setCurrentRequestId(response.request_id)
-      setBookingStep('payment')
-      
-    } catch (error) {
-      console.error('Error preparando la reserva:', error)
-      setPaymentError('Error al preparar la reserva. Por favor intenta nuevamente.')
+
+      setBookingStep('confirmation')
+      setTimeout(() => {
+        onBookingComplete({
+          professional,
+          date: selectedDate,
+          time: selectedTimeSlot,
+          details: serviceDetails,
+          requestId: response.id_solicitud_servicio,
+        })
+      }, 4000)
+
+    } catch (error: any) {
+      console.error('Error enviando la solicitud:', error)
+      setBookingError(error?.message || 'Error al enviar la solicitud. Por favor intenta nuevamente.')
     } finally {
       setIsBooking(false)
     }
-  }
-
-  // Handler cuando el pago es exitoso
-  const handlePaymentSuccess = (paymentData: any) => {
-    console.log('Pago exitoso:', paymentData)
-    setBookingStep('confirmation')
-    
-    // Redirigir a mis solicitudes después de 3 segundos
-    setTimeout(() => {
-      onBookingComplete({
-        professional,
-        date: selectedDate,
-        time: selectedTimeSlot,
-        details: serviceDetails,
-        payment: paymentData
-      })
-    }, 3000)
-  }
-
-  // Handler cuando hay un error en el pago
-  const handlePaymentError = (error: any) => {
-    console.error('Error en el pago:', error)
-    setPaymentError(error.message || 'Error procesando el pago')
-    setBookingStep('payment')
-  }
-
-  // Handler para volver desde el pago
-  const handleBackFromPayment = () => {
-    setBookingStep('details')
-    setPaymentError(null)
   }
 
   // Usar useMemo para evitar re-generación innecesaria de slots
@@ -386,9 +357,9 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
               <CheckCircle className="w-10 h-10 text-white" />
             </div>
             
-            <h2 className="text-3xl font-bold text-gray-900 mb-3">¡Pago Exitoso!</h2>
+            <h2 className="text-3xl font-bold text-gray-900 mb-3">¡Solicitud Enviada!</h2>
             <p className="text-gray-600 mb-8 text-lg">
-              Tu pago ha sido procesado correctamente y tu servicio está confirmado. El profesional te contactará pronto para coordinar los detalles.
+              Tu solicitud fue enviada correctamente. El profesional la revisará y te confirmará a la brevedad.
             </p>
             
             <div className="bg-gradient-to-r from-gray-50 to-white rounded-lg border p-6 mb-8">
@@ -426,7 +397,7 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
                     </div>
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500 mb-1">Total</p>
+                    <p className="text-sm text-gray-500 mb-1">Precio acordado</p>
                     <p className="font-bold text-green-600 text-lg">${currentPrice.toLocaleString()}</p>
                   </div>
                 </div>
@@ -438,9 +409,9 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
                 <div className="flex items-center gap-3">
                   <CheckCircle className="w-5 h-5 text-green-600" />
                   <div className="text-left">
-                    <p className="text-sm font-medium text-green-800">Pago Confirmado</p>
+                    <p className="text-sm font-medium text-green-800">Solicitud Pendiente de Confirmación</p>
                     <p className="text-xs text-green-700 mt-1">
-                      Tu transacción fue procesada exitosamente por MercadoPago
+                      El profesional recibirá tu solicitud y podrá confirmarla o rechazarla
                     </p>
                   </div>
                 </div>
@@ -449,7 +420,7 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
               <div className="flex items-center justify-center gap-2 text-blue-600">
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
                 <p className="text-sm font-medium">
-                  Redirigiendo a tus solicitudes de servicio...
+                  Redirigiendo a tus solicitudes...
                 </p>
               </div>
             </div>
@@ -515,8 +486,8 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
         {/* Indicador de progreso */}
         <div className="bg-white rounded-lg shadow-sm border p-6 mb-8">
           {(() => {
-            const steps: Array<'datetime' | 'details' | 'payment'> = ['datetime', 'details', 'payment']
-            const stepIndex = steps.indexOf(bookingStep as 'datetime' | 'details' | 'payment')
+            const steps: Array<'datetime' | 'details' | 'confirmation'> = ['datetime', 'details', 'confirmation']
+            const stepIndex = steps.indexOf(bookingStep as 'datetime' | 'details' | 'confirmation')
             const passed = (index: number) => stepIndex > index
             const active = (index: number) => stepIndex === index
             const step3Active = active(2)
@@ -815,110 +786,25 @@ export default function ServiceBooking({ professional, user, onBack, onBookingCo
                   >
                     Volver
                   </Button>
+                  {bookingError && (
+                    <Alert variant="destructive" className="w-full">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription>{bookingError}</AlertDescription>
+                    </Alert>
+                  )}
                   <Button 
-                    onClick={handlePrepareBooking}
+                    onClick={handleSubmitBooking}
                     disabled={!serviceDetails.address || !serviceDetails.phone || !serviceDetails.description || isBooking}
                     className="flex-1"
                   >
-                    {isBooking ? 'Preparando...' : 'Continuar al Pago'}
+                    {isBooking ? 'Enviando solicitud...' : 'Enviar Solicitud'}
                   </Button>
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {bookingStep === 'payment' && (
-            <Card className="shadow-sm">
-              <CardHeader className="pb-4">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <CreditCard className="w-5 h-5 text-blue-600" />
-                  Pago del Servicio
-                </CardTitle>
-                <CardDescription>
-                  Completa el pago para confirmar tu reserva
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Resumen de la reserva */}
-                <div className="bg-gray-50 rounded-lg p-6">
-                  <h4 className="font-medium mb-4">Resumen de tu Reserva</h4>
-                  <div className="space-y-3 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Servicio:</span>
-                      <span className="font-medium">{professional.service}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Profesional:</span>
-                      <span className="font-medium">{professional.name}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Fecha:</span>
-                      <span className="font-medium">
-                        {selectedDate?.toLocaleDateString('es-ES', { 
-                          weekday: 'long', 
-                          day: 'numeric', 
-                          month: 'long' 
-                        })}
-                      </span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Hora:</span>
-                      <span className="font-medium">{selectedTimeSlot?.start}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-600">Dirección:</span>
-                      <span className="font-medium">{serviceDetails.address}</span>
-                    </div>
-                    <Separator />
-                    <div className="flex justify-between text-lg">
-                      <span className="font-medium">Total a Pagar:</span>
-                      <span className="font-bold text-green-600">${currentPrice.toLocaleString()}</span>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Mensaje de error si existe */}
-                {paymentError && (
-                  <Alert variant="destructive">
-                    <AlertCircle className="h-4 w-4" />
-                    <AlertDescription>{paymentError}</AlertDescription>
-                  </Alert>
-                )}
-
-                {/* Información de seguridad */}
-                <Alert>
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>
-                    Tu pago será procesado de forma segura por MercadoPago. 
-                    No guardaremos tu información de pago.
-                  </AlertDescription>
-                </Alert>
-
-                {/* Formulario de pago embebido */}
-                {currentRequestId ? (
-                  <CheckoutForm
-                    amount={currentPrice}
-                    description={`${professional.service} - ${professional.name}`}
-                    requestId={currentRequestId}
-                    onSuccess={handlePaymentSuccess}
-                    onError={handlePaymentError}
-                    onBack={handleBackFromPayment}
-                  />
-                ) : (
-                  <div className="text-center py-4">
-                    <Button 
-                      onClick={handlePrepareBooking}
-                      disabled={isBooking}
-                      size="lg"
-                      className="w-full"
-                    >
-                      {isBooking ? 'Preparando pago...' : 'Continuar al Pago'}
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
           </div>
 
           {/* Panel Lateral */}

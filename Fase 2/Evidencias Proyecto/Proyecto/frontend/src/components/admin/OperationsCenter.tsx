@@ -48,10 +48,6 @@ interface ProblematicRequest {
   telefono_profesional: string
   nombre_servicio: string
   nombre_categoria: string
-  id_pago: string | null
-  estado_pago: string | null
-  monto: number | null
-  fecha_pago: string | null
   tipo_problema: string
   severidad: string
 }
@@ -499,20 +495,6 @@ export default function OperationsCenter() {
                   <p className="text-sm text-yellow-800 whitespace-pre-wrap">
                     {selectedRequest.comentarios_cancelacion}
                   </p>
-                </div>
-              )}
-
-              {/* Información de pago */}
-              {selectedRequest.id_pago && (
-                <div>
-                  <h4 className="font-semibold mb-2">Información de Pago</h4>
-                  <div className="space-y-1 text-sm">
-                    <p><strong>Estado:</strong> <Badge>{selectedRequest.estado_pago}</Badge></p>
-                    <p><strong>Monto:</strong> {formatCurrency(selectedRequest.monto || 0)}</p>
-                    {selectedRequest.fecha_pago && (
-                      <p><strong>Fecha:</strong> {formatDate(selectedRequest.fecha_pago)}</p>
-                    )}
-                  </div>
                 </div>
               )}
 

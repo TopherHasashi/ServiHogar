@@ -9,10 +9,7 @@ import { Label } from "../ui/label"
 // Removed unused Select imports
 import { Switch } from "../ui/switch"
 import { Alert, AlertDescription } from "../ui/alert"
-import ServihogarBankAccountManager from "./ServihogarBankAccountManager"
 import OperationsCenter from "./OperationsCenter"
-import PaymentHistory from "./PaymentHistory"
-import RefundsManagement from "./RefundsManagement"
 import { apiGetAuth, apiPutAuth } from "../../lib/api"
 import { 
   Users, 
@@ -71,7 +68,6 @@ interface DashboardData {
 
 export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
-  const [bankStats, setBankStats] = useState<any>(null)
   const [systemConfig, setSystemConfig] = useState<any>(null)
   const [loadingConfig, setLoadingConfig] = useState(false)
   const [savingConfig, setSavingConfig] = useState(false)
@@ -95,20 +91,6 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
     }
 
     fetchDashboardData()
-  }, [])
-
-  // Cargar estadísticas bancarias
-  useEffect(() => {
-    const fetchBankStats = async () => {
-      try {
-        const data = await apiGetAuth('/api/admin/bank-accounts/stats/')
-        setBankStats(data)
-      } catch (err: any) {
-        console.error('Error cargando estadísticas bancarias:', err)
-      }
-    }
-
-    fetchBankStats()
   }, [])
 
   // Cargar configuración del sistema
@@ -249,12 +231,9 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
         {/* Dashboard Content */}
         {!loading && !error && (
           <Tabs defaultValue="overview" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-6">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="overview">Resumen Ejecutivo</TabsTrigger>
               <TabsTrigger value="operations">Centro de Operaciones</TabsTrigger>
-              <TabsTrigger value="refunds">Reembolsos</TabsTrigger>
-              <TabsTrigger value="banking">Cuentas Bancarias</TabsTrigger>
-              <TabsTrigger value="payments">Historial Pagos</TabsTrigger>
               <TabsTrigger value="config">Configuración</TabsTrigger>
             </TabsList>
 
@@ -478,105 +457,6 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
             <OperationsCenter />
           </TabsContent>
 
-          {/* TAB: REEMBOLSOS */}
-          <TabsContent value="refunds" className="space-y-6">
-            <div>
-              <h2 className="text-2xl font-bold">Gestión de Reembolsos</h2>
-              <p className="text-gray-600">Solicitudes canceladas y reembolsos procesados</p>
-            </div>
-
-            <RefundsManagement />
-          </TabsContent>
-
-          {/* TAB: CUENTAS BANCARIAS */}
-          <TabsContent value="banking" className="space-y-6">
-            <div>
-              <h2 className="text-2xl font-bold">Cuentas Bancarias de ServiHogar</h2>
-              <p className="text-gray-600">Gestión de cuentas para retención de pagos</p>
-            </div>
-
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>
-                Estas son las cuentas bancarias corporativas donde se retendrá el dinero de los clientes 
-                antes de procesarse los pagos a los profesionales. La cuenta principal se usará por defecto 
-                para todas las transacciones.
-              </AlertDescription>
-            </Alert>
-
-            <ServihogarBankAccountManager />
-
-            <Card className="border-blue-200 bg-blue-50">
-              <CardHeader>
-                <CardTitle className="text-blue-900">Información sobre Cuentas Corporativas</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm text-blue-800">
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <p>
-                    <strong>Cuenta Principal:</strong> Todos los pagos de clientes se procesarán inicialmente a esta cuenta.
-                  </p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <p>
-                    <strong>Cuentas de Respaldo:</strong> Se utilizarán automáticamente en caso de que la cuenta principal 
-                    tenga problemas (cupo lleno, cuenta bloqueada, error de transacción).
-                  </p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <CheckCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <p>
-                    <strong>Seguridad:</strong> Los números de cuenta se muestran parcialmente ocultos por seguridad. 
-                    Solo personal autorizado puede ver la información completa.
-                  </p>
-                </div>
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                  <p>
-                    <strong>Importante:</strong> Cualquier cambio en las cuentas bancarias debe ser reportado al 
-                    equipo de finanzas y validado antes de procesar nuevas transacciones.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Estadísticas de Transacciones</CardTitle>
-                <CardDescription>Últimos 30 días</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 border rounded-lg">
-                    <p className="text-sm text-gray-600">Total Procesado</p>
-                    <p className="text-2xl font-bold mt-1">
-                      {bankStats ? formatCurrency(bankStats.totalProcesado) : formatCurrency(0)}
-                    </p>
-                  </div>
-                  <div className="p-4 border rounded-lg">
-                    <p className="text-sm text-gray-600">Transacciones Exitosas</p>
-                    <p className="text-2xl font-bold mt-1 text-green-600">
-                      {bankStats ? bankStats.transaccionesExitosas.toLocaleString() : '0'}
-                    </p>
-                  </div>
-                  <div className="p-4 border rounded-lg">
-                    <p className="text-sm text-gray-600">Comisión Generada</p>
-                    <p className="text-2xl font-bold mt-1">
-                      {bankStats ? formatCurrency(bankStats.comisionGenerada) : formatCurrency(0)}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {bankStats && bankStats.totalProcesado > 0 
-                        ? `${((bankStats.comisionGenerada / bankStats.totalProcesado) * 100).toFixed(1)}% del total`
-                        : '0% del total'
-                      }
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
           {/* TAB: CONFIGURACIÓN */}
           <TabsContent value="config" className="space-y-6">
             <div>
@@ -753,11 +633,6 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                 </AlertDescription>
               </Alert>
             )}
-          </TabsContent>
-
-          {/* TAB: HISTORIAL DE PAGOS */}
-          <TabsContent value="payments" className="space-y-6">
-            <PaymentHistory />
           </TabsContent>
         </Tabs>
         )}

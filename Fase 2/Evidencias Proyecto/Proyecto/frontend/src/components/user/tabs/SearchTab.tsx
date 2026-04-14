@@ -149,7 +149,7 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
   const totalPages = Math.ceil(items.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
-  const paginatedItems = items.slice(startIndex, endIndex)
+  const _paginatedItems = items.slice(startIndex, endIndex)
 
   // Generar array de números de página para mostrar
   const getPageNumbers = () => {

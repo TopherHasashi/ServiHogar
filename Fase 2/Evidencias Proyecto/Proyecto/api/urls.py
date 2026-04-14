@@ -31,34 +31,9 @@ from .views import (
     professional_stats,
     update_service_price,
     update_service_details,
-    professional_bank_accounts_list,
-    professional_bank_account_create,
-    professional_bank_account_update,
-    professional_bank_account_delete,
-)
-from .payments import (
-    create_booking_and_payment,
-    create_payment_preference,
-    payment_webhook,
-    payment_status,
-    process_checkout_api_payment,
-    test_mp_credentials,
-    process_refund,
-    process_professional_payout,
 )
 from .admin_views import (
     admin_dashboard_summary,
-    payment_metrics,
-    get_payment_history,
-    get_refunds_list,
-    process_refund as admin_process_refund,
-)
-from .bank_account_views import (
-    get_servihogar_bank_accounts,
-    create_servihogar_bank_account,
-    update_servihogar_bank_account,
-    delete_servihogar_bank_account,
-    get_bank_account_stats,
 )
 from .config_views import (
     get_system_config, 
@@ -111,32 +86,8 @@ urlpatterns = [
     path("services/<uuid:service_id>/visibility/", toggle_service_visibility, name="toggle_service_visibility"),
     path("services/<uuid:service_id>/price/", update_service_price, name="update_service_price"),
     path("services/<uuid:service_id>/details/", update_service_details, name="update_service_details"),
-    # Professional Bank Accounts
-    path("professional/bank-accounts/", professional_bank_accounts_list, name="professional_bank_accounts_list"),
-    path("professional/bank-accounts/create/", professional_bank_account_create, name="professional_bank_account_create"),
-    path("professional/bank-accounts/<uuid:account_id>/", professional_bank_account_update, name="professional_bank_account_update"),
-    path("professional/bank-accounts/<uuid:account_id>/delete/", professional_bank_account_delete, name="professional_bank_account_delete"),
-    # Payments
-    path("payments/test-credentials/", test_mp_credentials, name="test_mp_credentials"),
-    path("payments/book/<uuid:service_id>/", create_booking_and_payment, name="create_booking_and_payment"),
-    path("payments/process/", process_checkout_api_payment, name="process_checkout_api_payment"),
-    path("payments/create/<uuid:request_id>/", create_payment_preference, name="create_payment_preference"),
-    path("payments/webhook/", payment_webhook, name="payment_webhook"),
-    path("payments/status/<uuid:request_id>/", payment_status, name="payment_status"),
-    path("payments/refund/<uuid:request_id>/", process_refund, name="process_refund"),
-    path("payments/payout/<uuid:request_id>/", process_professional_payout, name="process_professional_payout"),
     # Admin
     path("admin/dashboard/summary/", admin_dashboard_summary, name="admin_dashboard_summary"),
-    path("admin/payment-metrics/", payment_metrics, name="payment_metrics"),
-    path("admin/payments/", get_payment_history, name="get_payment_history"),
-    path("admin/refunds/", get_refunds_list, name="get_refunds_list"),
-    path("admin/process-refund/", admin_process_refund, name="admin_process_refund"),
-    # Bank Accounts ServiHogar
-    path("admin/bank-accounts/", get_servihogar_bank_accounts, name="get_servihogar_bank_accounts"),
-    path("admin/bank-accounts/create/", create_servihogar_bank_account, name="create_servihogar_bank_account"),
-    path("admin/bank-accounts/<uuid:account_id>/", update_servihogar_bank_account, name="update_servihogar_bank_account"),
-    path("admin/bank-accounts/<uuid:account_id>/delete/", delete_servihogar_bank_account, name="delete_servihogar_bank_account"),
-    path("admin/bank-accounts/stats/", get_bank_account_stats, name="get_bank_account_stats"),
     # System Configuration
     path("admin/config/", get_system_config, name="get_system_config"),
     path("admin/config/update/", update_system_config, name="update_system_config"),

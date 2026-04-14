@@ -8,14 +8,12 @@ import { Textarea } from "../../ui/textarea"
 import { Label } from "../../ui/label"
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription as AlertDialogDesc,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "../../ui/alert-dialog"
 import ReviewModal from "../ReviewModal"
 // import { apiPost } from "../../../lib/api"

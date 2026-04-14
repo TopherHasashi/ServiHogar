@@ -84,7 +84,7 @@ export default function ProfessionalTabMultiService({
   const [showProfessionalForm, setShowProfessionalForm] = useState(false)
   const [editingService, setEditingService] = useState<string | null>(null)
   const [showAddServiceForm, setShowAddServiceForm] = useState(false)
-  const [editingProfile, setEditingProfile] = useState(false)
+  const [_editingProfile, setEditingProfile] = useState(false)
   const [editServiceForm, setEditServiceForm] = useState<any>({})
   const [saveError, setSaveError] = useState<string | null>(null)
   const newExpInputRef = useRef<HTMLInputElement | null>(null)
@@ -121,7 +121,7 @@ export default function ProfessionalTabMultiService({
   const [newServiceExperienceFiles, setNewServiceExperienceFiles] = useState<File[]>([])
 
   // Estado para editar perfil general
-  const [profileForm, setProfileForm] = useState({
+  const [profileForm, _setProfileForm] = useState({
     generalDescription: userProfessionalProfile?.generalDescription || "",
     acceptsNewJobs: userProfessionalProfile?.acceptsNewJobs ?? true
   })
@@ -532,7 +532,7 @@ export default function ProfessionalTabMultiService({
     setSaveError(null)
   }
 
-  const handleUpdateProfile = () => {
+  const _handleUpdateProfile = () => {
     if (!userProfessionalProfile) return
 
     const updatedProfile = {

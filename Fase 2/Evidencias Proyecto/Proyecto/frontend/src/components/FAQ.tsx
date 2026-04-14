@@ -18,7 +18,7 @@ const faqs = [
   },
   {
     question: "¿Cómo funcionan los pagos en la plataforma?",
-    answer: "Todo el proceso de pago es digital y seguro. Utilizamos MercadoPago para procesar los pagos con tarjetas de crédito, débito y transferencias. Tu dinero queda protegido hasta que confirmes que el servicio fue completado satisfactoriamente."
+    answer: "Los pagos se coordinan directamente entre el cliente y el profesional al momento del servicio. Puedes pagar en efectivo, transferencia bancaria u otro método acordado con el profesional. ServiHogar no intermedia en las transacciones económicas."
   },
   {
     question: "¿Puedo ver reseñas de los profesionales antes de contratar?",
@@ -26,7 +26,7 @@ const faqs = [
   },
   {
     question: "¿Qué pasa si no estoy satisfecho con el servicio?",
-    answer: "Tu dinero está protegido hasta que confirmes la satisfacción del servicio. Si hay algún problema, no confirmes el pago y contacta nuestro soporte. El profesional deberá corregir el trabajo o podremos asignar otro."
+    answer: "Si hay algún problema con el servicio, contacta nuestro soporte. El profesional deberá corregir el trabajo o podemos asignar otro. Los acuerdos económicos se resuelven directamente entre las partes."
   },
   {
     question: "¿Cómo se manejan los precios?",
@@ -89,15 +89,15 @@ export default function FAQ({ onContactClick }: FAQProps) {
               <div className="w-10 h-10 sm:w-12 sm:h-12 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-2 sm:mb-3">
                 <HelpCircle className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
-              <h4 className="text-base sm:text-lg text-gray-900 mb-1 sm:mb-2">Pagos Protegidos</h4>
-              <p className="text-xs sm:text-sm text-gray-600">Tu dinero está seguro hasta confirmar el servicio</p>
+              <h4 className="text-base sm:text-lg text-gray-900 mb-1 sm:mb-2">Pagos Flexibles</h4>
+              <p className="text-xs sm:text-sm text-gray-600">Pago en efectivo o transferencia, acordado directamente con el profesional</p>
             </div>
             <div>
               <div className="w-10 h-10 sm:w-12 sm:h-12 bg-purple-500 rounded-full flex items-center justify-center mx-auto mb-2 sm:mb-3">
                 <HelpCircle className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
               </div>
-              <h4 className="text-base sm:text-lg text-gray-900 mb-1 sm:mb-2">100% Digital</h4>
-              <p className="text-xs sm:text-sm text-gray-600">Sin efectivo, todo se maneja desde la plataforma</p>
+              <h4 className="text-base sm:text-lg text-gray-900 mb-1 sm:mb-2">Coordinación Simple</h4>
+              <p className="text-xs sm:text-sm text-gray-600">Agenda fácilmente desde la plataforma</p>
             </div>
           </div>
         </div>

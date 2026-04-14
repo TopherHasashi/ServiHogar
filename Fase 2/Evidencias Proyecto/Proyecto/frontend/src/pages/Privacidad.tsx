@@ -76,7 +76,7 @@ export default function PrivacidadPage() {
             <div className="grid gap-4">
               <div className="border-l-4 border-purple-500 pl-4">
                 <p className="font-medium text-gray-900">Prestación del servicio</p>
-                <p className="text-gray-700">Facilitar la conexión entre clientes y profesionales, procesar pagos y coordinar servicios.</p>
+                <p className="text-gray-700">Facilitar la conexión entre clientes y profesionales y coordinar servicios.</p>
               </div>
               <div className="border-l-4 border-purple-500 pl-4">
                 <p className="font-medium text-gray-900">Mejora de la plataforma</p>
@@ -116,7 +116,6 @@ export default function PrivacidadPage() {
               <div className="bg-orange-50 p-4 rounded-lg">
                 <p className="font-medium text-gray-900 mb-2">Proveedores de servicios:</p>
                 <ul className="list-disc list-inside space-y-1 text-gray-700 ml-4">
-                  <li><strong>Mercado Pago:</strong> Para procesar pagos de forma segura</li>
                   <li><strong>Servicios de hosting:</strong> Para almacenamiento de datos</li>
                   <li><strong>Herramientas de análisis:</strong> Para mejorar nuestros servicios</li>
                   <li><strong>Servicios de email:</strong> Para comunicaciones automatizadas</li>

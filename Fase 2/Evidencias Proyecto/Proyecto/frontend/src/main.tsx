@@ -18,9 +18,6 @@ import ProfesionalPage from './pages/Profesional.tsx'
 import VerificadorPage from './pages/Verificador.tsx'
 import ClientePage from './pages/Cliente'
 import AdminPage from './pages/Admin'
-import PaymentSuccessPage from './pages/PaymentSuccess'
-import PaymentFailurePage from './pages/PaymentFailure'
-import PaymentPendingPage from './pages/PaymentPending'
 import { AuthProvider } from './lib/auth'
 import { Toaster } from 'sonner'
 
@@ -92,9 +89,6 @@ const router = createBrowserRouter([
       { path: 'contacto', element: <ContactoPage /> },
       { path: 'terminos', element: <TerminosPage /> },
       { path: 'privacidad', element: <PrivacidadPage /> },
-      { path: 'payment/success', element: <PaymentSuccessPage /> },
-      { path: 'payment/failure', element: <PaymentFailurePage /> },
-      { path: 'payment/pending', element: <PaymentPendingPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
   },

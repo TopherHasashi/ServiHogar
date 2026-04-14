@@ -173,7 +173,5 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
 }
 
-# Mercado Pago configuration
-MERCADOPAGO_ACCESS_TOKEN = env('MERCADOPAGO_ACCESS_TOKEN', default='')
 FRONTEND_URL = env('FRONTEND_URL', default='http://localhost:5173')
 
