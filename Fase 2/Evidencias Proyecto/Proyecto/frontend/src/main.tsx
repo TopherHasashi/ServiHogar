@@ -14,6 +14,7 @@ import PrivacidadPage from './pages/Privacidad'
 import NotFoundPage from './pages/NotFound'
 import LoginPage from './pages/Login'
 import RegisterPage from './pages/Register'
+import PasswordResetConfirmPage from './pages/PasswordResetConfirm'
 import ProfesionalPage from './pages/Profesional.tsx'
 import VerificadorPage from './pages/Verificador.tsx'
 import ClientePage from './pages/Cliente'
@@ -98,6 +99,7 @@ const router = createBrowserRouter([
     children: [
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
+      { path: 'reset-password', element: <PasswordResetConfirmPage /> },
     ],
   },
   {

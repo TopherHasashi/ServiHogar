@@ -28,6 +28,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from typing import Tuple, List, Optional
 import re
 from datetime import datetime, timedelta, date
+import difflib
 
 
 def _normalize_genero(value: Optional[str]) -> Optional[str]:
@@ -40,6 +41,96 @@ def _normalize_genero(value: Optional[str]) -> Optional[str]:
 	if v in {"otro", "prefiero-no-decir", "no binario", "nobinario", "no-binario"}:
 		return "no_binario"
 	return None
+
+
+def _fix_mojibake(value: Optional[str]) -> Optional[str]:
+	if not value:
+		return value
+	replacements = {
+		"Ã¡": "á",
+		"Ã©": "é",
+		"Ã­": "í",
+		"Ã³": "ó",
+		"Ãº": "ú",
+		"Ã±": "ñ",
+		"Ã¼": "ü",
+		"Ãœ": "Ü",
+	}
+	for wrong, right in replacements.items():
+		value = value.replace(wrong, right)
+	return value
+
+
+def _normalize_simple(value: str) -> str:
+	return (
+		value
+		.lower()
+		.replace("á", "a")
+		.replace("é", "e")
+		.replace("í", "i")
+		.replace("ó", "o")
+		.replace("ú", "u")
+		.replace("ñ", "n")
+		.replace("ü", "u")
+		.replace(" ", "")
+	)
+
+
+BIOBIO_COMUNAS = [
+	"Concepción",
+	"Coronel",
+	"Chiguayante",
+	"Florida",
+	"Hualqui",
+	"Lota",
+	"Penco",
+	"San Pedro de la Paz",
+	"Santa Juana",
+	"Talcahuano",
+	"Tomé",
+	"Hualpén",
+	"Lebu",
+	"Arauco",
+	"Cañete",
+	"Contulmo",
+	"Curanilahue",
+	"Los Álamos",
+	"Tirúa",
+	"Los Ángeles",
+	"Antuco",
+	"Cabrero",
+	"Laja",
+	"Mulchén",
+	"Nacimiento",
+	"Negrete",
+	"Quilaco",
+	"Quilleco",
+	"San Rosendo",
+	"Santa Bárbara",
+	"Tucapel",
+	"Yumbel",
+	"Alto Biobío",
+]
+
+
+def _repair_biobio_comuna(value: str) -> str:
+	if not value:
+		return value
+	fixed = _fix_mojibake(value)
+	if fixed and "?" not in fixed and "\ufffd" not in fixed:
+		return fixed
+	needle = _normalize_simple(re.sub(r"[\?\ufffd]", "", fixed or value))
+	if not needle:
+		return fixed or value
+	lookup = { _normalize_simple(c): c for c in BIOBIO_COMUNAS }
+	if needle in lookup:
+		return lookup[needle]
+	# Fuzzy match if letters are missing
+	candidates = list(lookup.keys())
+	best = difflib.get_close_matches(needle, candidates, n=1, cutoff=0.6)
+	if best:
+		return lookup[best[0]]
+	return fixed or value
 
 
 def _resolve_region_comuna(cur, region_name: Optional[str], comuna_name: Optional[str]):
@@ -137,6 +228,38 @@ def _resolve_region_comuna(cur, region_name: Optional[str], comuna_name: Optiona
 	return region_id, comuna_id
 
 
+def _get_genero_actual(cur, rut: str) -> Optional[str]:
+	cur.execute(
+		"""
+		SELECT g.nombre
+		FROM historial_genero_usuario h
+		JOIN genero g ON g.id_genero = h.id_genero
+		WHERE h.rut_usuario = %s
+		ORDER BY h.cambiado_en DESC
+		LIMIT 1
+		""",
+		[rut],
+	)
+	row = cur.fetchone()
+	return row[0] if row else None
+
+
+def _get_rol_actual(cur, rut: str) -> Optional[str]:
+	cur.execute(
+		"""
+		SELECT r.nombre
+		FROM historial_rol_usuario h
+		JOIN rol r ON r.id_rol = h.id_rol
+		WHERE h.rut_usuario = %s
+		ORDER BY h.cambiado_en DESC
+		LIMIT 1
+		""",
+		[rut],
+	)
+	row = cur.fetchone()
+	return row[0] if row else None
+
+
 def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[str], email: str, password_hash: str,
 							phone: Optional[str], address: Optional[str], gender: Optional[str], birth_date, role: Optional[str],
 							region_name: Optional[str], comuna_name: Optional[str], comuna_id_override: Optional[str] = None):
@@ -165,7 +288,7 @@ def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[st
 	if not rut:
 		return False
 
-	# Defaults para columnas NOT NULL
+	# Defaults para historial si falta genero/rol
 	if not genero:
 		genero = "no_binario"
 	# La tabla espera TIMESTAMP NOT NULL; si viene date, convertir a datetime; si nada, usar now()
@@ -173,7 +296,6 @@ def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[st
 		birth_dt = timezone.now()
 	else:
 		try:
-			# date -> datetime a medianoche
 			from datetime import date, datetime
 			if isinstance(birth_date, datetime):
 				birth_dt = birth_date
@@ -184,7 +306,7 @@ def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[st
 		except Exception:
 			birth_dt = timezone.now()
 
-	# Intentar UPSERT vía ORM sobre el modelo no gestionado
+	# UPSERT en tabla dominio usuario + historial de genero/rol
 	with transaction.atomic():
 		# Resolver comuna: usar override si viene, si no, resolver por nombres
 		id_comuna = None
@@ -201,77 +323,65 @@ def _upsert_usuario_dominio(*, first_name: str, last_name: str, rut: Optional[st
 			# Verificar conflictos previos por email asignado a otro RUT
 			existing_by_email = UsuarioDominio.objects.filter(email=email).exclude(rut=rut).first()
 			if existing_by_email:
-				# email único en dominio; no podemos reasignarlo silenciosamente
 				return False
 
-			try:
-				obj = UsuarioDominio.objects.get(rut=rut)
-				created = False
-			except UsuarioDominio.DoesNotExist:
-				obj = None
-				created = True
-
-			if created:
-				obj = UsuarioDominio(
-					rut=rut,
-					nombres=nombres,
-					apellidos=apellidos,
-					telefono=telefono,
-					direccion=direccion,
-					genero=genero,
-					fecha_nacimiento=birth_dt,
-					id_comuna=id_comuna,
-					rol=rol,
-					email=email,
-					email_verificado=False,
-					ultima_actividad=None,
-					creado_en=timezone.now(),
-					actualizado_en=timezone.now(),
+			with connection.cursor() as cur:
+				cur.execute(
+					"""
+					INSERT INTO usuario (
+						rut, nombres, apellidos, email, telefono,
+						fecha_nacimiento, id_comuna, direccion,
+						email_verificado, ultima_actividad, creado_en, actualizado_en
+					) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+					ON CONFLICT (rut) DO UPDATE SET
+						nombres=EXCLUDED.nombres,
+						apellidos=EXCLUDED.apellidos,
+						email=EXCLUDED.email,
+						telefono=EXCLUDED.telefono,
+						fecha_nacimiento=EXCLUDED.fecha_nacimiento,
+						id_comuna=EXCLUDED.id_comuna,
+						direccion=EXCLUDED.direccion,
+						actualizado_en=EXCLUDED.actualizado_en
+					""",
+					[
+						rut,
+						nombres,
+						apellidos,
+						email,
+						telefono,
+						birth_dt,
+						str(id_comuna),
+						direccion,
+						False,
+						None,
+						timezone.now(),
+						timezone.now(),
+					],
 				)
-				obj.save()
-			else:
-				# Update minimal fields
-				obj.nombres = nombres or obj.nombres
-				obj.apellidos = apellidos or obj.apellidos
-				obj.email = email or obj.email
-				obj.telefono = telefono or obj.telefono
-				obj.direccion = direccion or obj.direccion
-				obj.genero = genero or obj.genero
-				obj.fecha_nacimiento = birth_dt or obj.fecha_nacimiento
-				obj.id_comuna = id_comuna or obj.id_comuna
-				obj.rol = rol or obj.rol
-				obj.actualizado_en = timezone.now()
-				obj.save(update_fields=[
-					"nombres", "apellidos", "email", "telefono", "direccion",
-					"genero", "fecha_nacimiento", "id_comuna",
-					"rol", "actualizado_en"
-				])
+				# Genero actual
+				cur.execute(
+					"""
+					INSERT INTO historial_genero_usuario (rut_usuario, id_genero, cambiado_en)
+					SELECT %s, g.id_genero, %s
+					FROM genero g
+					WHERE g.nombre = %s
+					""",
+					[rut, timezone.now(), genero],
+				)
+				# Rol actual
+				cur.execute(
+					"""
+					INSERT INTO historial_rol_usuario (rut_usuario, id_rol, cambiado_en)
+					SELECT %s, r.id_rol, %s
+					FROM rol r
+					WHERE r.nombre = %s
+					""",
+					[rut, timezone.now(), rol],
+				)
 			return True
 		except IntegrityError:
-			# Marcar rollback de la subtransacción para limpiar el estado y evitar InFailedSqlTransaction
 			transaction.set_rollback(True)
-			# Si conflicto por RUT, intenta buscar por RUT y actualizar por ahí
-			try:
-				obj = UsuarioDominio.objects.get(rut=rut)
-				obj.email = email or obj.email
-				obj.nombres = nombres or obj.nombres
-				obj.apellidos = apellidos or obj.apellidos
-				obj.telefono = telefono or obj.telefono
-				obj.direccion = direccion or obj.direccion
-				obj.genero = genero or obj.genero
-				obj.fecha_nacimiento = birth_dt or obj.fecha_nacimiento
-				obj.id_comuna = id_comuna or obj.id_comuna
-				obj.rol = rol or obj.rol
-				obj.actualizado_en = timezone.now()
-				obj.save(update_fields=[
-					"email", "nombres", "apellidos", "telefono", "direccion",
-					"genero", "fecha_nacimiento", "id_comuna",
-					"rol", "actualizado_en"
-				])
-				return True
-			except UsuarioDominio.DoesNotExist:
-				# Si también falla, no romper el flujo
-				return False
+			return False
 		except Exception:
 			return False
 
@@ -285,7 +395,14 @@ def regiones(request):
 	with connection.cursor() as cur:
 		cur.execute("SELECT id_region, nombre, codigo FROM region ORDER BY nombre")
 		rows = cur.fetchall()
-	return Response([{"id": str(r[0]), "nombre": r[1], "codigo": r[2]} for r in rows])
+	result = []
+	for r in rows:
+		name = _fix_mojibake(r[1])
+		code = r[2]
+		if name and ("?" in name or "\ufffd" in name) and str(code or "").upper() in {"VIII", "08", "8"}:
+			name = "Región del Biobío"
+		result.append({"id": str(r[0]), "nombre": name, "codigo": code})
+	return Response(result)
 
 
 @api_view(["GET"])
@@ -293,15 +410,33 @@ def comunas(request):
 	region_id = request.query_params.get("region_id")
 	comuna_id = request.query_params.get("comuna_id")
 	with connection.cursor() as cur:
+		biobio_ids = set()
+		try:
+			cur.execute(
+				"""
+				SELECT id_region FROM region
+				WHERE unaccent(lower(nombre)) LIKE '%%biobio%%'
+				   OR lower(nombre) LIKE '%%biobio%%'
+				   OR codigo IN ('VIII', '08', '8')
+				"""
+			)
+			biobio_ids = {str(r[0]) for r in cur.fetchall()}
+		except Exception:
+			biobio_ids = set()
 		if comuna_id:
 			cur.execute(
 				"SELECT id_comuna, nombre, codigo, id_region FROM comuna WHERE id_comuna=%s",
 				[comuna_id],
 			)
 			rows = cur.fetchall()
-			return Response([
-				{"id": str(r[0]), "nombre": r[1], "codigo": r[2], "region_id": str(r[3])} for r in rows
-			])
+			result = []
+			for r in rows:
+				region_id_row = str(r[3])
+				name = _fix_mojibake(r[1])
+				if region_id_row in biobio_ids:
+					name = _repair_biobio_comuna(name)
+				result.append({"id": str(r[0]), "nombre": name, "codigo": r[2], "region_id": region_id_row})
+			return Response(result)
 		elif region_id:
 			cur.execute(
 				"SELECT id_comuna, nombre, codigo, id_region FROM comuna WHERE id_region=%s ORDER BY nombre",
@@ -310,7 +445,14 @@ def comunas(request):
 		else:
 			cur.execute("SELECT id_comuna, nombre, codigo, id_region FROM comuna ORDER BY nombre")
 		rows = cur.fetchall()
-	return Response([{"id": str(r[0]), "nombre": r[1], "codigo": r[2], "region_id": str(r[3])} for r in rows])
+	result = []
+	for r in rows:
+		region_id_row = str(r[3])
+		name = _fix_mojibake(r[1])
+		if region_id_row in biobio_ids:
+			name = _repair_biobio_comuna(name)
+		result.append({"id": str(r[0]), "nombre": name, "codigo": r[2], "region_id": region_id_row})
+	return Response(result)
 
 
 @api_view(["GET"])
@@ -384,7 +526,8 @@ def my_services(request):
 			"""
 			SELECT sp.id_servicio_profesional, cs.nombre AS categoria, sp.anos_experiencia,
 				   sp.descripcion, sp.tipo_duracion, sp.duracion_fija_minutos, sp.duracion_minima_minutos,
-				   sp.duracion_maxima_minutos, sp.precio_fijo, sp.estado_verificacion,
+				   sp.duracion_maxima_minutos, sp.precio_fijo,
+(SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = sp.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) AS estado_verificacion,
 				   sp.creado_en, sp.razon_rechazo
 			FROM servicio_profesional sp
 			JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
@@ -591,6 +734,9 @@ def me(request):
 			dom = UsuarioDominio.objects.get(email=request.user.email)
 		except UsuarioDominio.DoesNotExist:
 			dom = UsuarioDominio.objects.get(rut=getattr(getattr(request.user, 'profile', None), 'rut', ''))
+		with connection.cursor() as cur:
+			genero_actual = _get_genero_actual(cur, dom.rut)
+			rol_actual = _get_rol_actual(cur, dom.rut)
 		data["dominio"] = {
 			"nombres": dom.nombres,
 			"apellidos": dom.apellidos,
@@ -598,10 +744,10 @@ def me(request):
 			"email": dom.email,
 			"telefono": dom.telefono,
 			"direccion": dom.direccion,
-			"genero": dom.genero,
+			"genero": genero_actual,
 			"fecha_nacimiento": dom.fecha_nacimiento.isoformat() if dom.fecha_nacimiento else None,
 			"id_comuna": dom.id_comuna,
-			"rol": dom.rol,
+			"rol": rol_actual,
 			"email_verificado": dom.email_verificado,
 			# Campos opcionales pueden no existir en el modelo unmanaged
 			"perfil_publico": getattr(dom, 'perfil_publico', None),
@@ -826,6 +972,9 @@ def update_me(request):
 			dom = UsuarioDominio.objects.get(email=request.user.email)
 		except UsuarioDominio.DoesNotExist:
 			dom = UsuarioDominio.objects.get(rut=getattr(getattr(request.user, 'profile', None), 'rut', ''))
+		with connection.cursor() as cur:
+			genero_actual = _get_genero_actual(cur, dom.rut)
+			rol_actual = _get_rol_actual(cur, dom.rut)
 		data["dominio"] = {
 			"nombres": dom.nombres,
 			"apellidos": dom.apellidos,
@@ -833,10 +982,10 @@ def update_me(request):
 			"email": dom.email,
 			"telefono": dom.telefono,
 			"direccion": dom.direccion,
-			"genero": dom.genero,
+			"genero": genero_actual,
 			"fecha_nacimiento": dom.fecha_nacimiento.isoformat() if dom.fecha_nacimiento else None,
 			"id_comuna": dom.id_comuna,
-			"rol": dom.rol,
+			"rol": rol_actual,
 			"email_verificado": dom.email_verificado,
 			"perfil_publico": getattr(dom, 'perfil_publico', None),
 			"foto_perfil_url": getattr(dom, 'foto_perfil_url', None),
@@ -1042,8 +1191,8 @@ def apply_professional(request):
 						id_servicio_profesional, rut_usuario, id_categoria_servicio,
 						anos_experiencia, descripcion, tipo_duracion, duracion_fija_minutos,
 						duracion_minima_minutos, duracion_maxima_minutos, precio_fijo,
-						estado_verificacion, creado_en, actualizado_en
-					) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'pendiente',%s,%s)
+						creado_en, actualizado_en
+					) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
 					""",
 					[
 						str(id_serv), dom.rut, str(id_cat), str(exp_int), description,
@@ -1051,6 +1200,7 @@ def apply_professional(request):
 						now, now,
 					],
 				)
+				cur.execute("INSERT INTO historial_estado_verificacion_servicio (id_servicio_profesional, id_estado_verificacion_servicio, cambiado_en) SELECT %s, id_estado_verificacion_servicio, %s FROM estado_verificacion_servicio WHERE nombre='pendiente'", [str(id_serv), now])
 		except IntegrityError as ie:
 			transaction.set_rollback(True)
 			return Response({"message": "No se pudo crear el servicio (integridad)", "error": str(ie)}, status=status.HTTP_400_BAD_REQUEST)
@@ -1199,7 +1349,8 @@ def verifications_pending(request):
 			   sp.descripcion, sp.anos_experiencia,
 			   CASE WHEN EXISTS (
 			       SELECT 1 FROM servicio_profesional s2
-			       WHERE s2.rut_usuario = sp.rut_usuario AND s2.id_servicio_profesional <> sp.id_servicio_profesional
+			       WHERE s2.rut_usuario = sp.rut_usuario 
+			       AND (s2.creado_en < sp.creado_en OR (s2.creado_en = sp.creado_en AND s2.id_servicio_profesional < sp.id_servicio_profesional))
 			   ) THEN FALSE ELSE TRUE END AS es_primer_servicio,
 			   sp.creado_en,
 				   u.nombres, u.apellidos, u.email, u.telefono,
@@ -1209,7 +1360,7 @@ def verifications_pending(request):
 			JOIN usuario u ON u.rut = sp.rut_usuario
 			JOIN comuna c ON c.id_comuna = u.id_comuna
 			JOIN region r ON r.id_region = c.id_region
-			WHERE sp.estado_verificacion = 'pendiente'
+			WHERE 'pendiente' = (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = sp.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1)
 			ORDER BY sp.creado_en DESC
 			"""
 		)
@@ -1324,11 +1475,13 @@ def verify_service(request, servicio_id: str):
 			cur.execute(
 				"""
 				UPDATE servicio_profesional
-				SET estado_verificacion = 'aprobado', rut_verificador = %s, verificado_en = %s
-				WHERE id_servicio_profesional = %s AND estado_verificacion = 'pendiente'
+				SET rut_verificador = %s, verificado_en = %s
+				WHERE id_servicio_profesional = %s AND 'pendiente' = (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1)
 				""",
 				[rut_ver, now, servicio_id],
 			)
+
+			cur.execute("INSERT INTO historial_estado_verificacion_servicio (id_servicio_profesional, id_estado_verificacion_servicio, cambiado_en) SELECT %s, id_estado_verificacion_servicio, %s FROM estado_verificacion_servicio WHERE nombre='aprobado'", [servicio_id, now])
 			# Si fue aprobado, promover rol a profesional en dominio.usuario y aprobar estado general si es primer servicio
 			try:
 				cur.execute(
@@ -1391,8 +1544,8 @@ def verify_service(request, servicio_id: str):
 			cur.execute(
 				"""
 				UPDATE servicio_profesional
-				SET estado_verificacion = 'rechazado', rut_verificador = %s, verificado_en = %s, razon_rechazo = %s
-				WHERE id_servicio_profesional = %s AND estado_verificacion = 'pendiente'
+                                SET rut_verificador = %s, verificado_en = %s, razon_rechazo = %s
+                                WHERE id_servicio_profesional = %s AND 'pendiente' = (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1)
 				""",
 				[rut_ver, now, reason or None, servicio_id],
 			)
@@ -1424,10 +1577,10 @@ def verifier_stats(request):
 			"""
 			SELECT 
 				COUNT(*) as total,
-				COUNT(CASE WHEN estado_verificacion = 'pendiente' THEN 1 END) as pendientes,
-				COUNT(CASE WHEN estado_verificacion = 'aprobado' THEN 1 END) as aprobados,
-				COUNT(CASE WHEN estado_verificacion = 'rechazado' THEN 1 END) as rechazados,
-				COUNT(CASE WHEN estado_verificacion = 'suspendido' THEN 1 END) as suspendidos
+				COUNT(CASE WHEN 'pendiente' = (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) THEN 1 END) as pendientes,
+				COUNT(CASE WHEN (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) = 'aprobado' THEN 1 END) as aprobados,
+				COUNT(CASE WHEN (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) = 'rechazado' THEN 1 END) as rechazados,
+				COUNT(CASE WHEN (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) = 'suspendido' THEN 1 END) as suspendidos
 			FROM servicio_profesional
 			"""
 		)
@@ -2392,7 +2545,8 @@ def services_search(request):
 		       sp.descripcion,
 			   sp.anos_experiencia, sp.tipo_duracion, sp.duracion_fija_minutos,
 			   sp.duracion_minima_minutos, sp.duracion_maxima_minutos, sp.precio_fijo,
-	   u.nombres, u.apellidos, u.email, u.telefono, u.genero,
+	   u.nombres, u.apellidos, u.email, u.telefono, 
+	   (SELECT g.nombre FROM historial_genero_usuario h JOIN genero g ON g.id_genero = h.id_genero WHERE h.rut_usuario = u.rut ORDER BY h.cambiado_en DESC LIMIT 1) AS genero,
 	   NULL AS foto_perfil_url,
 			   c.nombre AS comuna_nombre, r.nombre AS region_nombre
 		FROM servicio_profesional sp
@@ -2400,7 +2554,7 @@ def services_search(request):
 		JOIN usuario u ON u.rut = sp.rut_usuario
 		JOIN comuna c ON c.id_comuna = u.id_comuna
 		JOIN region r ON r.id_region = c.id_region
-		WHERE sp.estado_verificacion = 'aprobado'
+		WHERE 'aprobado' = (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = sp.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1)
 		"""
 	]
 	params: list = []
@@ -2616,7 +2770,7 @@ def toggle_service_visibility(request, service_id: str):
 
 	# Obtener estado actual
 	with connection.cursor() as cur:
-		cur.execute("SELECT estado_verificacion FROM servicio_profesional WHERE id_servicio_profesional=%s", [service_id_str])
+		cur.execute("SELECT (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) FROM servicio_profesional WHERE id_servicio_profesional=%s", [service_id_str])
 		row2 = cur.fetchone()
 		if not row2:
 			return Response({"ok": False, "message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
@@ -2741,7 +2895,7 @@ def service_availability(request, service_id: str):
 	with connection.cursor() as cur:
 		cur.execute(
 			"""
-			SELECT estado_verificacion, lower(coalesce(tipo_duracion,'')) AS tipo,
+			SELECT (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) AS estado_verificacion, lower(coalesce(tipo_duracion,'')) AS tipo,
 				   duracion_fija_minutos, duracion_minima_minutos, duracion_maxima_minutos
 			FROM servicio_profesional
 			WHERE id_servicio_profesional=%s
@@ -2921,7 +3075,7 @@ def service_weekly_template(request, service_id: str):
 	service_id_str = str(service_id)
 	# Verificar que el servicio está aprobado
 	with connection.cursor() as cur:
-		cur.execute("SELECT estado_verificacion FROM servicio_profesional WHERE id_servicio_profesional=%s", [service_id_str])
+		cur.execute("SELECT (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) FROM servicio_profesional WHERE id_servicio_profesional=%s", [service_id_str])
 		row = cur.fetchone()
 	if not row:
 		return Response({"message": "Servicio no encontrado"}, status=status.HTTP_404_NOT_FOUND)
@@ -2985,7 +3139,7 @@ def service_book(request, service_id: str):
 	with connection.cursor() as cur:
 		cur.execute(
 			"""
-			SELECT estado_verificacion, lower(coalesce(tipo_duracion,'')) AS tipo,
+			SELECT (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = servicio_profesional.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) AS estado_verificacion, lower(coalesce(tipo_duracion,'')) AS tipo,
 			       duracion_fija_minutos, duracion_minima_minutos, duracion_maxima_minutos,
 			       precio_fijo, rut_usuario
 			FROM servicio_profesional
@@ -3620,12 +3774,12 @@ def professional_stats(request):
 				sp.duracion_minima_minutos,
 				sp.duracion_maxima_minutos,
 				sp.precio_fijo,
-				sp.estado_verificacion,
-				sp.habilitado,
+					(SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = sp.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) AS estado_verificacion,
+					sp.habilitado,
 				sp.disponible
 			FROM servicio_profesional sp
 			JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
-			WHERE sp.rut_usuario = %s AND sp.estado_verificacion = 'aprobado'
+			WHERE sp.rut_usuario = %s AND 'aprobado' = (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = sp.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1)
 			ORDER BY sp.creado_en DESC
 			""",
 			[dom.rut],
@@ -3773,7 +3927,7 @@ def update_service_price(request, service_id):
 			# Verificar que el servicio pertenece al profesional
 			cur.execute(
 				"""
-				SELECT sp.id_servicio_profesional, sp.estado_verificacion, cs.nombre
+				SELECT sp.id_servicio_profesional, (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = sp.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) AS estado_verificacion, cs.nombre
 				FROM servicio_profesional sp
 				JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
 				WHERE sp.id_servicio_profesional = %s AND sp.rut_usuario = %s
@@ -3878,7 +4032,7 @@ def update_service_details(request, service_id):
 			# Verificar que el servicio pertenece al profesional
 			cur.execute(
 				"""
-				SELECT sp.id_servicio_profesional, sp.estado_verificacion, cs.nombre
+				SELECT sp.id_servicio_profesional, (SELECT evs.nombre FROM historial_estado_verificacion_servicio h JOIN estado_verificacion_servicio evs ON evs.id_estado_verificacion_servicio = h.id_estado_verificacion_servicio WHERE h.id_servicio_profesional = sp.id_servicio_profesional ORDER BY h.cambiado_en DESC LIMIT 1) AS estado_verificacion, cs.nombre
 				FROM servicio_profesional sp
 				JOIN categoria_servicio cs ON cs.id_categoria_servicio = sp.id_categoria_servicio
 				WHERE sp.id_servicio_profesional = %s AND sp.rut_usuario = %s
@@ -3950,3 +4104,107 @@ def update_service_details(request, service_id):
 	})
 
 
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def password_reset(request):
+    email = request.data.get('email')
+    if not email:
+        return Response({'message': 'El correo electrónico es requerido'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    usuario: User = User.objects.filter(email=email).first()
+    if usuario:
+        token = default_token_generator.make_token(usuario)
+        uid = urlsafe_base64_encode(force_bytes(usuario.pk))
+        
+        frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+        reset_link = f"{frontend_url}/reset-password?uid={uid}&token={token}"
+        
+        send_mail(
+            'Recuperación de Contraseña - ServiHogar',
+            f'Hola, haz solicitado recuperar tu contraseña. Has clic en el siguiente enlace para crear una nueva: \n\n{reset_link}\n\nSi no haz solicitado esto, ignora este correo.',
+            'noreply@servihogar.cl',
+            [usuario.email],
+            fail_silently=False,
+        )
+    # Siempre devolvemos success para no revelar si el correo existe
+    return Response({'message': 'Si tu correo está en nuestro sistema, te enviaremos un enlace de recuperación.'})
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def password_reset_confirm(request):
+    uidb64 = request.data.get('uid')
+    token = request.data.get('token')
+    new_password = request.data.get('new_password')
+    
+    if not all([uidb64, token, new_password]):
+        return Response({'message': 'Faltan parámetros requeridos'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        usuario = User.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        usuario = None
+        
+    if usuario is not None and default_token_generator.check_token(usuario, token):
+        usuario.set_password(new_password)
+        usuario.save()
+        return Response({'message': 'Contraseña actualizada correctamente'})
+    else:
+        return Response({'message': 'El enlace de recuperación es inválido o ha expirado'}, status=status.HTTP_400_BAD_REQUEST)
+from django.contrib.auth.tokens import default_token_generator
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes, force_str
+from django.core.mail import send_mail
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def password_reset(request):
+    email = request.data.get('email')
+    if not email:
+        return Response({'message': 'El correo electrónico es requerido'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    usuario: User = User.objects.filter(email=email).first()
+    if usuario:
+        token = default_token_generator.make_token(usuario)
+        uid = urlsafe_base64_encode(force_bytes(usuario.pk))
+        
+        frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+        reset_link = f"{frontend_url}/reset-password?uid={uid}&token={token}"
+        
+        send_mail(
+            'Recuperación de Contraseña - ServiHogar',
+            f'Hola, haz solicitado recuperar tu contraseña. Has clic en el siguiente enlace para crear una nueva: \n\n{reset_link}\n\nSi no haz solicitado esto, ignora este correo.',
+            'noreply@servihogar.cl',
+            [usuario.email],
+            fail_silently=False,
+        )
+    # Siempre devolvemos success para no revelar si el correo existe
+    return Response({'message': 'Si tu correo está en nuestro sistema, te enviaremos un enlace de recuperación.'})
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def password_reset_confirm(request):
+    uidb64 = request.data.get('uid')
+    token = request.data.get('token')
+    new_password = request.data.get('new_password')
+    
+    if not all([uidb64, token, new_password]):
+        return Response({'message': 'Faltan parámetros requeridos'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        usuario = User.objects.get(pk=uid)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        usuario = None
+        
+    if usuario is not None and default_token_generator.check_token(usuario, token):
+        usuario.set_password(new_password)
+        usuario.save()
+        return Response({'message': 'Contraseña actualizada correctamente'})
+    else:
+        return Response({'message': 'El enlace de recuperación es inválido o ha expirado'}, status=status.HTTP_400_BAD_REQUEST)

@@ -5,9 +5,12 @@ import { Label } from "../ui/label"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Alert, AlertDescription } from "../ui/alert"
 import { Shield, Eye, EyeOff, ArrowLeft } from "lucide-react"
+import { apiPost, clearTokens, saveTokens } from "../../lib/api"
+import { useAuth } from "../../lib/auth"
+import { useNavigate } from "react-router-dom"
 
 interface AdminAuthProps {
-  onLogin: () => void
+  onLogin: (user: any) => void
   onBack: () => void
 }
 
@@ -17,28 +20,39 @@ export default function AdminAuth({ onLogin, onBack }: AdminAuthProps) {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-
-  // Credenciales de administrador (en producción estarían en variables de entorno)
-  const ADMIN_CREDENTIALS = {
-    email: "admin@servihogar.cl",
-    password: "Admin2024!ServiHogar"
-  }
+  const { refreshUser } = useAuth()
+  const navigate = useNavigate()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
     setIsLoading(true)
 
-    // Simular tiempo de autenticación
-    await new Promise(resolve => setTimeout(resolve, 1000))
-
-    if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
-      onLogin()
-    } else {
-      setError("Credenciales incorrectas. Verifica tu email y contraseña.")
+    try {
+      const tokens = await apiPost('/api/auth/login/', { username: email, password })
+      const access = tokens?.access || tokens?.access_token
+      const refresh = tokens?.refresh || tokens?.refresh_token
+      if (!access || !refresh) {
+        throw new Error('No se recibieron tokens del servidor')
+      }
+      saveTokens({ access, refresh })
+      const user = await refreshUser()
+      if (!user) {
+        clearTokens()
+        throw new Error('No se pudo cargar el perfil del usuario')
+      }
+      if (user.effective_role !== 'administrador') {
+        clearTokens()
+        throw new Error('Tu usuario no tiene permisos de administrador')
+      }
+      onLogin(user)
+      navigate('/admin', { replace: true })
+    } catch (err: any) {
+      const message = err?.message || 'Credenciales incorrectas. Verifica tu email y contraseña.'
+      setError(message)
+    } finally {
+      setIsLoading(false)
     }
-    
-    setIsLoading(false)
   }
 
   return (
@@ -127,15 +141,10 @@ export default function AdminAuth({ onLogin, onBack }: AdminAuthProps) {
               </Button>
             </form>
 
-            {/* Credentials Info for Development */}
             <div className="mt-6 p-4 bg-slate-700/50 rounded-lg border border-slate-600">
-              <h4 className="text-sm font-medium text-slate-300 mb-2">🔑 Credenciales de Prueba:</h4>
-              <div className="space-y-1 text-xs text-slate-400">
-                <p><strong>Email:</strong> admin@servihogar.cl</p>
-                <p><strong>Contraseña:</strong> Admin2024!ServiHogar</p>
-              </div>
-              <p className="text-xs text-slate-500 mt-2">
-                (En producción, estas credenciales estarían ocultas)
+              <h4 className="text-sm font-medium text-slate-300 mb-2">🔑 Acceso Administrativo</h4>
+              <p className="text-xs text-slate-400">
+                Ingresa las credenciales del administrador registradas en la plataforma.
               </p>
             </div>
           </CardContent>

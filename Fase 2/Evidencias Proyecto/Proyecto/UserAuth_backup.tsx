@@ -638,7 +638,11 @@ export default function UserAuth({ onLogin, initialTab }: UserAuthProps) {
                       ¿Olvidaste tu contraseña?
                     </Button>
                   </div>
-                
+                </form>
+                </CardContent>
+                </>
+              )}
+
                 {/* Dev creation buttons removed. Admin and Verifier credentials are pre-seeded in the backend. */}
 
                 {/* Demo accounts info */}
@@ -665,10 +669,7 @@ export default function UserAuth({ onLogin, initialTab }: UserAuthProps) {
                     </div>
                   </div>
                 </div>
-
-                </CardContent>
-                </>
-              )}
+              </CardContent>
             </Card>
           </TabsContent>
 

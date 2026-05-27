@@ -31,6 +31,8 @@ from .views import (
     professional_stats,
     update_service_price,
     update_service_details,
+    password_reset,
+    password_reset_confirm,
 )
 from .admin_views import (
     admin_dashboard_summary,
@@ -56,6 +58,8 @@ urlpatterns = [
     path("auth/me/", me, name="me"),
     path("auth/me/update/", update_me, name="update_me"),
     path("auth/me/avatar/", upload_avatar, name="upload_avatar"),
+    path("auth/password-reset/", password_reset, name="password_reset"),
+    path("auth/password-reset-confirm/", password_reset_confirm, name="password_reset_confirm"),
     # Professional application & verification
     path("professional/apply/", apply_professional, name="apply_professional"),
     path("verifications/pending/", verifications_pending, name="verifications_pending"),

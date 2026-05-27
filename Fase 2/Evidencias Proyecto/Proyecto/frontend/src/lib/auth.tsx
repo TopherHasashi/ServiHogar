@@ -50,7 +50,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   function logout() {
     clearTokens()
     setUser(null)
-    window.location.href = '/'
   }
 
   async function refreshUser(): Promise<User | null> {

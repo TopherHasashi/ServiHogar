@@ -15,14 +15,17 @@ import {
 } from "lucide-react"
 import { apiGet } from "../lib/api"
 
+import { formatLocationName } from "../lib/locationFormatter"
+
 interface AllServicesProps {
   onServiceSelect: (professional: any) => void
 }
 
 export default function AllServices({ onServiceSelect }: AllServicesProps) {
+  const BIOBIO_REGION_NAME = "Biobío"
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedService, setSelectedService] = useState("")
-  const [selectedRegion, setSelectedRegion] = useState("")
+  const [selectedRegion, setSelectedRegion] = useState(BIOBIO_REGION_NAME)
   const [selectedCommune, setSelectedCommune] = useState("")
   const [priceRange, setPriceRange] = useState("")
   const [rating, setRating] = useState("")
@@ -69,6 +72,10 @@ export default function AllServices({ onServiceSelect }: AllServicesProps) {
     "Región de Tarapacá": ["Iquique", "Alto Hospicio"],
     "Región de Ñuble": ["Chillán", "San Carlos"]
   }
+
+  const availableRegions = Object.keys(regionsAndCommunes).filter(
+    (region) => region === BIOBIO_REGION_NAME
+  )
 
   // Obtener comunas basadas en la región seleccionada
   const getAvailableCommunes = () => {
@@ -203,11 +210,10 @@ export default function AllServices({ onServiceSelect }: AllServicesProps) {
                   <Label>Región</Label>
                   <Select value={selectedRegion} onValueChange={handleRegionChange}>
                     <SelectTrigger className="bg-white">
-                      <SelectValue placeholder="Todas las regiones" />
+                      <SelectValue placeholder={BIOBIO_REGION_NAME} />
                     </SelectTrigger>
                     <SelectContent className="bg-white border shadow-lg max-h-60 overflow-y-auto">
-                      <SelectItem value="all" className="hover:bg-gray-100 focus:bg-gray-100">Todas las regiones</SelectItem>
-                      {Object.keys(regionsAndCommunes).map((region) => (
+                      {availableRegions.map((region) => (
                         <SelectItem key={region} value={region} className="hover:bg-gray-100 focus:bg-gray-100">
                           {region}
                         </SelectItem>
@@ -367,7 +373,13 @@ export default function AllServices({ onServiceSelect }: AllServicesProps) {
                               <h3 className="text-lg font-semibold">{professional.name}</h3>
                               <div className="flex items-center gap-2 text-sm text-gray-600">
                                 <MapPin className="w-4 h-4" />
-                                <span>{professional.location}</span>
+                                  <span>
+                                    {professional.commune && professional.region
+                                      ? `${formatLocationName(professional.commune)}, ${formatLocationName(professional.region)}`
+                                      : professional.location
+                                        ? professional.location.split(',').map(formatLocationName).join(', ')
+                                        : ''}
+                                  </span>
                               </div>
                             </div>
                             <Badge variant="secondary">{professional.service}</Badge>

@@ -69,6 +69,7 @@ interface DashboardData {
 export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null)
   const [systemConfig, setSystemConfig] = useState<any>(null)
+  const [configReadOnly, setConfigReadOnly] = useState(false)
   const [loadingConfig, setLoadingConfig] = useState(false)
   const [savingConfig, setSavingConfig] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -99,6 +100,7 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
       try {
         setLoadingConfig(true)
         const data = await apiGetAuth('/api/admin/config/')
+        const readOnly = Boolean(data?.__meta?.readOnly)
         
         // Convertir el formato de la API al formato del estado local
         const config = {
@@ -111,8 +113,18 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
         }
         
         setSystemConfig(config)
+        setConfigReadOnly(readOnly)
       } catch (err: any) {
         console.error('Error cargando configuración del sistema:', err)
+        setSystemConfig({
+          platformCommission: 5,
+          minServicePrice: 10000,
+          maxServicePrice: 500000,
+          autoApproveVerified: false,
+          requireDocuments: true,
+          maintenanceMode: false
+        })
+        setConfigReadOnly(true)
       } finally {
         setLoadingConfig(false)
       }
@@ -475,6 +487,14 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
               </Card>
             ) : systemConfig ? (
               <>
+                {configReadOnly && (
+                  <Alert className="border-yellow-200 bg-yellow-50">
+                    <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                    <AlertDescription className="text-yellow-800">
+                      Configuración en modo lectura: el esquema actual no soporta cambios.
+                    </AlertDescription>
+                  </Alert>
+                )}
                 <Card>
                   <CardHeader>
                     <CardTitle>Parámetros Comerciales</CardTitle>
@@ -488,6 +508,7 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                           type="number" 
                           value={systemConfig.platformCommission}
                           onChange={(e) => setSystemConfig({...systemConfig, platformCommission: Number(e.target.value)})}
+                          disabled={configReadOnly}
                           min="0"
                           max="100"
                           step="0.1"
@@ -501,6 +522,7 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                           type="number" 
                           value={systemConfig.minServicePrice}
                           onChange={(e) => setSystemConfig({...systemConfig, minServicePrice: Number(e.target.value)})}
+                          disabled={configReadOnly}
                           min="0"
                           step="1000"
                         />
@@ -513,6 +535,7 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                           type="number" 
                           value={systemConfig.maxServicePrice}
                           onChange={(e) => setSystemConfig({...systemConfig, maxServicePrice: Number(e.target.value)})}
+                          disabled={configReadOnly}
                           min="0"
                           step="1000"
                         />
@@ -520,7 +543,7 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                       </div>
                     </div>
 
-                    <Button onClick={handleSaveConfig} disabled={savingConfig}>
+                    <Button onClick={handleSaveConfig} disabled={savingConfig || configReadOnly}>
                       {savingConfig ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -550,6 +573,7 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                       <Switch 
                         checked={systemConfig.autoApproveVerified}
                         onCheckedChange={(checked) => setSystemConfig({...systemConfig, autoApproveVerified: checked})}
+                        disabled={configReadOnly}
                       />
                     </div>
 
@@ -561,10 +585,11 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                       <Switch 
                         checked={systemConfig.requireDocuments}
                         onCheckedChange={(checked) => setSystemConfig({...systemConfig, requireDocuments: checked})}
+                        disabled={configReadOnly}
                       />
                     </div>
 
-                    <Button onClick={handleSaveConfig} disabled={savingConfig}>
+                    <Button onClick={handleSaveConfig} disabled={savingConfig || configReadOnly}>
                       {savingConfig ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -597,6 +622,7 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                       <Switch 
                         checked={systemConfig.maintenanceMode}
                         onCheckedChange={(checked) => setSystemConfig({...systemConfig, maintenanceMode: checked})}
+                        disabled={configReadOnly}
                       />
                     </div>
 
@@ -609,7 +635,7 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
                       </Alert>
                     )}
 
-                    <Button onClick={handleSaveConfig} disabled={savingConfig} variant="destructive">
+                    <Button onClick={handleSaveConfig} disabled={savingConfig || configReadOnly} variant="destructive">
                       {savingConfig ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />

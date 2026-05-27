@@ -364,7 +364,6 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
       setProfessionalStatus('pending')
       setUserProfessionalProfile(null)
       if (activeTab !== 'professional') setActiveTab('professional')
-      alert('Tu solicitud fue enviada al verificador. Te notificaremos al ser revisada.')
     } catch (e: any) {
       alert(e?.message || 'Error desconocido')
     }

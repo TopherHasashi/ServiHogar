@@ -1,9 +1,15 @@
 import AdminDashboardBI from "../components/admin/AdminDashboardBI"
 import { useAuth } from "../lib/auth"
-import { Navigate } from "react-router-dom"
+import { Navigate, useNavigate } from "react-router-dom"
 
 export default function AdminPage() {
   const { user, loading, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/')
+  }
 
   if (loading) {
     return (
@@ -23,5 +29,5 @@ export default function AdminPage() {
     return <Navigate to="/cliente" replace />
   }
 
-  return <AdminDashboardBI onLogout={logout} />
+  return <AdminDashboardBI onLogout={handleLogout} />
 }

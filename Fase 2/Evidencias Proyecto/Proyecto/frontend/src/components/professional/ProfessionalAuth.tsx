@@ -21,17 +21,7 @@ import {
   ArrowLeft
 } from "lucide-react"
 
-interface ProfessionalAuthProps {
-  onLogin: (professional: any) => void
-  onBack: () => void
-}
-
-export default function ProfessionalAuth({ onLogin, onBack }: ProfessionalAuthProps) {
-  const [activeTab, setActiveTab] = useState("login")
-  const [loginForm, setLoginForm] = useState({
-    email: "",
-    password: ""
-  })
+import { useNavigate } from "react-router-dom"
   
   const [registerForm, setRegisterForm] = useState({
     firstName: "",
@@ -43,7 +33,7 @@ export default function ProfessionalAuth({ onLogin, onBack }: ProfessionalAuthPr
     confirmPassword: "",
     specialty: "",
     experience: "",
-    region: "",
+    region: BIOBIO_REGION_NAME,
     district: "",
     certifications: [] as string[],
     acceptTerms: false
@@ -77,6 +67,10 @@ export default function ProfessionalAuth({ onLogin, onBack }: ProfessionalAuthPr
     "Región Aysén del General Carlos Ibáñez del Campo": ["Coyhaique", "Lago Verde", "Aysén", "Cisnes", "Guaitecas", "Cochrane", "O'Higgins", "Tortel", "Chile Chico", "Río Ibáñez"],
     "Región de Magallanes y de la Antártica Chilena": ["Punta Arenas", "Laguna Blanca", "Río Verde", "San Gregorio", "Cabo de Hornos", "Antártica", "Porvenir", "Primavera", "Timaukel", "Natales", "Torres del Paine"]
   }
+
+  const availableRegions = Object.keys(regionsAndCommunes).filter(
+    (region) => region === BIOBIO_REGION_NAME
+  )
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
@@ -324,12 +318,13 @@ export default function ProfessionalAuth({ onLogin, onBack }: ProfessionalAuthPr
                           <Select 
                             value={registerForm.region} 
                             onValueChange={(value) => setRegisterForm({...registerForm, region: value, district: ""})}
+                            disabled={availableRegions.length === 1}
                           >
                             <SelectTrigger className="pl-10">
                               <SelectValue placeholder="Selecciona tu región" />
                             </SelectTrigger>
                             <SelectContent>
-                              {Object.keys(regionsAndCommunes).map((region) => (
+                              {availableRegions.map((region) => (
                                 <SelectItem key={region} value={region}>
                                   {region}
                                 </SelectItem>

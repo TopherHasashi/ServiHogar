@@ -8,8 +8,66 @@ from rest_framework import status, permissions
 from django.db import connection
 from django.utils import timezone
 import logging
+from .permission_utils import get_user_role_by_email
 
 logger = logging.getLogger(__name__)
+
+
+def _table_exists(cur, table_name: str) -> bool:
+	try:
+		cur.execute(
+			"SELECT 1 FROM information_schema.tables WHERE table_name = %s",
+			[table_name],
+		)
+		return cur.fetchone() is not None
+	except Exception:
+		try:
+			cur.execute(
+				"SELECT name FROM sqlite_master WHERE type = 'table' AND name = %s",
+				[table_name],
+			)
+			return cur.fetchone() is not None
+		except Exception:
+			return False
+
+
+def _default_config_payload():
+	return {
+		"comision_plataforma": {
+			"valor": 5,
+			"tipo_dato": "number",
+			"descripcion": "Comision de plataforma por servicio"
+		},
+		"precio_minimo_servicio": {
+			"valor": 10000,
+			"tipo_dato": "number",
+			"descripcion": "Precio minimo permitido"
+		},
+		"precio_maximo_servicio": {
+			"valor": 500000,
+			"tipo_dato": "number",
+			"descripcion": "Precio maximo permitido"
+		},
+		"auto_aprobar_verificados": {
+			"valor": False,
+			"tipo_dato": "boolean",
+			"descripcion": "Aprobacion automatica de verificados"
+		},
+		"requerir_documentos": {
+			"valor": True,
+			"tipo_dato": "boolean",
+			"descripcion": "Documentacion obligatoria"
+		},
+		"modo_mantenimiento": {
+			"valor": False,
+			"tipo_dato": "boolean",
+			"descripcion": "Modo mantenimiento"
+		},
+		"__meta": {
+			"readOnly": True,
+			"message": "Configuracion no disponible en este esquema"
+		}
+	}
 
 
 @api_view(['GET'])
@@ -22,16 +80,15 @@ def get_system_config(request):
 	try:
 		# Verificar que el usuario es administrador
 		with connection.cursor() as cur:
-			cur.execute(
-				"SELECT rol FROM usuario WHERE email = %s",
-				[request.user.email]
-			)
-			row = cur.fetchone()
-			if not row or row[0] != 'administrador':
+			role = get_user_role_by_email(cur, request.user.email)
+			if role != 'administrador':
 				return Response(
 					{"message": "No tienes permisos para acceder a este recurso"},
 					status=status.HTTP_403_FORBIDDEN
 				)
+			
+			if not _table_exists(cur, "configuracion_sistema"):
+				return Response(_default_config_payload())
 			
 			# Obtener toda la configuración
 			cur.execute(
@@ -82,23 +139,18 @@ def update_system_config(request):
 	try:
 		# Verificar que el usuario es administrador
 		with connection.cursor() as cur:
-			cur.execute(
-				"SELECT email FROM usuario WHERE email = %s",
-				[request.user.email]
-			)
-			row = cur.fetchone()
-			if not row or row[0] != 'administrador':
-				# Verificar rol
-				cur.execute(
-					"SELECT rol FROM usuario WHERE email = %s",
-					[request.user.email]
+			role = get_user_role_by_email(cur, request.user.email)
+			if role != 'administrador':
+				return Response(
+					{"message": "No tienes permisos para acceder a este recurso"},
+					status=status.HTTP_403_FORBIDDEN
 				)
-				row = cur.fetchone()
-				if not row or row[0] != 'administrador':
-					return Response(
-						{"message": "No tienes permisos para acceder a este recurso"},
-						status=status.HTTP_403_FORBIDDEN
-					)
+			
+			if not _table_exists(cur, "configuracion_sistema"):
+				return Response(
+					{"message": "Configuracion no disponible en este esquema"},
+					status=status.HTTP_503_SERVICE_UNAVAILABLE
+				)
 			
 			data = request.data
 			updated_count = 0
@@ -156,15 +208,17 @@ def get_config_value(request, clave):
 	try:
 		# Verificar que el usuario es administrador
 		with connection.cursor() as cur:
-			cur.execute(
-				"SELECT rol FROM usuario WHERE email = %s",
-				[request.user.email]
-			)
-			row = cur.fetchone()
-			if not row or row[0] != 'administrador':
+			role = get_user_role_by_email(cur, request.user.email)
+			if role != 'administrador':
 				return Response(
 					{"message": "No tienes permisos para acceder a este recurso"},
 					status=status.HTTP_403_FORBIDDEN
+				)
+			
+			if not _table_exists(cur, "configuracion_sistema"):
+				return Response(
+					{"message": "Configuracion no disponible en este esquema"},
+					status=status.HTTP_503_SERVICE_UNAVAILABLE
 				)
 			
 			# Obtener el valor

@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../ui/card"
 import { Button } from "../ui/button"
 import { Badge } from "../ui/badge"
 import { ScrollArea } from "../ui/scroll-area"
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "../ui/accordion"
 import { Alert, AlertDescription } from "../ui/alert"
 import { 
   CheckCircle, 
@@ -309,49 +310,79 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
               </CardHeader>
               <CardContent className="p-0">
                 <ScrollArea className="h-[500px] lg:h-[600px]">
-                  <div className="space-y-2 p-4">
-                    {pendingVerifications.map((professional) => (
-                      <Card 
-                        key={professional.id}
-                        className={`cursor-pointer transition-all ${
-                          selectedProfessional === professional.id 
-                            ? 'ring-2 ring-blue-500 bg-blue-50' 
-                            : 'hover:bg-gray-50'
-                        }`}
-                        onClick={() => setSelectedProfessional(professional.id)}
-                      >
-                        <CardContent className="p-3 sm:p-4">
-                          <div className="space-y-2">
-                            <div className="flex items-start justify-between gap-2">
-                              <h3 className="font-medium text-sm sm:text-base truncate flex-1">{professional.professionalName}</h3>
-                              <Badge variant="outline" className="text-xs flex-shrink-0">
-                                {professional.specialty}
-                              </Badge>
+                  <div className="p-4">
+                    <Accordion type="single" collapsible className="w-full space-y-2">
+                      {Object.values(pendingVerifications.reduce((acc, curr) => {
+                        if (!acc[curr.professionalId]) acc[curr.professionalId] = { id: curr.professionalId, name: curr.professionalName, services: [] };
+                        acc[curr.professionalId].services.push(curr);
+                        return acc;
+                      }, {} as Record<string, { id: string, name: string, services: ProfessionalDocument[] }>))
+                      .map(group => {
+                        group.services.sort((a,b) => new Date(a.submittedDate).getTime() - new Date(b.submittedDate).getTime());
+                        return group;
+                      })
+                      .map((group) => (
+                        <AccordionItem key={group.id} value={group.id} className="border bg-gray-50 rounded-lg shadow-sm px-2">
+                          <AccordionTrigger className="hover:no-underline text-sm font-semibold text-gray-800 py-3">
+                            <div className="flex justify-between items-center w-full pr-2">
+                              <span>{group.name}</span>
+                              <Badge variant="secondary" className="text-xs ml-2">{group.services.length} solic.</Badge>
                             </div>
-                            <div className="text-sm text-gray-600 space-y-1">
-                              <div className="flex items-center gap-2">
-                                <Calendar className="w-3 h-3 flex-shrink-0" />
-                                <span className="text-xs sm:text-sm">
-                                  {new Date(professional.submittedDate).toLocaleDateString('es-CL')}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <MapPin className="w-3 h-3 flex-shrink-0" />
-                                <span className="text-xs sm:text-sm truncate">
-                                  {professional.commune}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <FileText className="w-3 h-3 flex-shrink-0" />
-                                <span className="text-xs sm:text-sm">
-                                  {professional.documents.length} documentos
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+                          </AccordionTrigger>
+                          <AccordionContent className="pb-3 space-y-2">
+                            {group.services.map((professional, index) => {
+                              const isClickable = index === 0; // Solo la primera en la cola de este usuario es revisable
+                              return (
+                                <Card 
+                                  key={professional.id}
+                                  className={`transition-all ${
+                                    !isClickable ? 'opacity-60 cursor-not-allowed bg-gray-100' : 'cursor-pointer bg-white'
+                                  } ${
+                                    selectedProfessional === professional.id 
+                                      ? 'ring-2 ring-blue-500 bg-blue-50' 
+                                      : (isClickable ? 'hover:bg-blue-50/50' : '')
+                                  }`}
+                                  onClick={() => { if (isClickable) setSelectedProfessional(professional.id) }}
+                                >
+                                  <CardContent className="p-3 sm:p-4">
+                                    <div className="space-y-2">
+                                      <div className="flex items-start justify-between gap-2">
+                                        <h3 className="font-medium text-sm sm:text-base truncate flex-1 block">
+                                          {professional.specialty}
+                                        </h3>
+                                        <Badge variant="outline" className="text-xs flex-shrink-0">
+                                          {professional.isFirstService ? 'Inicial' : 'Adicional'}
+                                        </Badge>
+                                      </div>
+                                      <div className="text-sm text-gray-600 space-y-1">
+                                        <div className="flex items-center gap-2">
+                                          <Calendar className="w-3 h-3 flex-shrink-0" />
+                                          <span className="text-xs sm:text-sm">
+                                            {new Date(professional.submittedDate).toLocaleDateString('es-CL')}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <MapPin className="w-3 h-3 flex-shrink-0" />
+                                          <span className="text-xs sm:text-sm truncate">
+                                            {professional.commune}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                          <FileText className="w-3 h-3 flex-shrink-0" />
+                                          <span className="text-xs sm:text-sm">
+                                            {professional.documents.length} documentos
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </CardContent>
+                                </Card>
+                              );
+                            })}
+                          </AccordionContent>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
                   </div>
                 </ScrollArea>
               </CardContent>

@@ -26,6 +26,7 @@ interface SearchTabProps {
 }
 
 export default function SearchTab({ professionals: initialProfessionals = [], user }: SearchTabProps) {
+  const BIOBIO_REGION_LABEL = "Región del Biobío"
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedService, setSelectedService] = useState("")
   const [selectedRegion, setSelectedRegion] = useState("")
@@ -45,6 +46,12 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
   const [loadingCommunes, setLoadingCommunes] = useState<boolean>(false)
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 10
+
+  const normalizeText = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
 
   // Mapeo nombre de servicio -> slug de categoría usado por el backend
   const serviceNameToSlug: Record<string, string> = useMemo(() => ({
@@ -67,6 +74,18 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
       .finally(() => { if (!ignore) setLoadingRegions(false) })
     return () => { ignore = true }
   }, [])
+
+  const availableRegions = useMemo(
+    () => regions.filter((r) => normalizeText(r.nombre).includes("biobio")),
+    [regions]
+  )
+
+  useEffect(() => {
+    if (!selectedRegion && availableRegions.length === 1) {
+      setSelectedRegion(availableRegions[0].id)
+      setSelectedCommune("")
+    }
+  }, [availableRegions, selectedRegion])
 
   // Cargar comunas cuando cambie la región seleccionada
   useEffect(() => {
@@ -233,7 +252,7 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
   const clearAllFilters = () => {
     setSearchQuery("")
     setSelectedService("")
-    setSelectedRegion("")
+    setSelectedRegion(availableRegions[0]?.id ?? "")
     setSelectedCommune("")
     setPriceRange("")
     setRating("")
@@ -344,13 +363,16 @@ export default function SearchTab({ professionals: initialProfessionals = [], us
               {/* Filtro por Región */}
               <div className="space-y-2">
                 <Label>Región</Label>
-                <Select value={selectedRegion} onValueChange={handleRegionChange}>
+                <Select
+                  value={selectedRegion}
+                  onValueChange={handleRegionChange}
+                  disabled={availableRegions.length === 1}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Todas las regiones" />
+                    <SelectValue placeholder={BIOBIO_REGION_LABEL} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">Todas las regiones</SelectItem>
-                    {regions.map(r => (
+                    {availableRegions.map(r => (
                       <SelectItem key={r.id} value={r.id}>
                         {r.nombre}
                       </SelectItem>

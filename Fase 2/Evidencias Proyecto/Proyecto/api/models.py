@@ -38,12 +38,11 @@ class UsuarioDominio(models.Model):
 	apellidos = models.CharField(max_length=100)
 	email = models.EmailField(unique=True)
 	telefono = models.CharField(max_length=20)
-	genero = models.CharField(max_length=20)
 	# En la tabla es TIMESTAMP NOT NULL; lo modelamos como DateTimeField
 	fecha_nacimiento = models.DateTimeField()
 	id_comuna = models.UUIDField()
 	direccion = models.TextField()
-	rol = models.CharField(max_length=20, default="cliente")
+	foto_perfil = models.BinaryField(null=True, blank=True)
 	# Flags/campos opcionales existentes en DDL
 	email_verificado = models.BooleanField(default=False)
 	ultima_actividad = models.DateTimeField(null=True)

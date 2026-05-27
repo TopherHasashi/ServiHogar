@@ -10,6 +10,7 @@ from django.db import connection
 from django.utils import timezone
 from datetime import timedelta
 import logging
+from .permission_utils import get_user_role_by_email
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +32,8 @@ def get_problematic_requests(request):
     try:
         # Verificar que el usuario sea administrador
         with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT rol FROM usuario WHERE email = %s
-            """, [request.user.email])
-            
-            user_result = cursor.fetchone()
-            if not user_result or user_result[0] != 'administrador':
+            role = get_user_role_by_email(cursor, request.user.email)
+            if role != 'administrador':
                 return Response(
                     {'error': 'No tiene permisos de administrador'},
                     status=status.HTTP_403_FORBIDDEN
@@ -180,12 +177,8 @@ def get_operations_stats(request):
     try:
         # Verificar que el usuario sea administrador
         with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT rol FROM usuario WHERE email = %s
-            """, [request.user.email])
-            
-            user_result = cursor.fetchone()
-            if not user_result or user_result[0] != 'administrador':
+            role = get_user_role_by_email(cursor, request.user.email)
+            if role != 'administrador':
                 return Response(
                     {'error': 'No tiene permisos de administrador'},
                     status=status.HTTP_403_FORBIDDEN
@@ -288,18 +281,14 @@ def resolve_request_issue(request, request_id):
     try:
         # Verificar que el usuario sea administrador
         with connection.cursor() as cursor:
-            cursor.execute("""
-                SELECT email, rol FROM usuario WHERE email = %s
-            """, [request.user.email])
-            
-            user_result = cursor.fetchone()
-            if not user_result or user_result[1] != 'administrador':
+            role = get_user_role_by_email(cursor, request.user.email)
+            if role != 'administrador':
                 return Response(
                     {'error': 'No tiene permisos de administrador'},
                     status=status.HTTP_403_FORBIDDEN
                 )
 
-            admin_email = user_result[0]
+            admin_email = request.user.email
             resolution_action = request.data.get('action', 'resolved')
             notes = request.data.get('notes', '')
 

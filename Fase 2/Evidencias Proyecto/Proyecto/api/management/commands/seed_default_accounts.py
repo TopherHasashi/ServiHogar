@@ -14,7 +14,6 @@ VERIF_PASSWORD = "Verifier2025!ServiHogar"
 # Datos por defecto para la tabla dominio.usuario (campos NOT NULL)
 DEFAULT_PHONE = "+56900000000"
 DEFAULT_ADDRESS = "N/A"
-DEFAULT_GENDER = "no_binario"
 DEFAULT_BIRTH = "1985-01-01 00:00:00"
 
 class Command(BaseCommand):
@@ -79,37 +78,63 @@ class Command(BaseCommand):
             prof.save(update_fields=["role"])
 
         # 3) Upsert a dominio.usuario para ambos (RUT y datos mínimos)
-        def upsert_usuario(rut: str, nombres: str, apellidos: str, email: str, rol: str):
+        def upsert_usuario(rut: str, nombres: str, apellidos: str, email: str):
             with connection.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO usuario (
-                        rut, nombres, apellidos, email, telefono, genero,
-                        fecha_nacimiento, id_comuna, direccion, rol,
+                        rut, nombres, apellidos, email, telefono,
+                        fecha_nacimiento, id_comuna, direccion,
                         creado_en, actualizado_en
-                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT (rut) DO UPDATE SET
                         nombres=EXCLUDED.nombres,
                         apellidos=EXCLUDED.apellidos,
                         email=EXCLUDED.email,
                         telefono=EXCLUDED.telefono,
-                        genero=EXCLUDED.genero,
                         fecha_nacimiento=EXCLUDED.fecha_nacimiento,
                         id_comuna=EXCLUDED.id_comuna,
                         direccion=EXCLUDED.direccion,
-                        rol=EXCLUDED.rol,
                         actualizado_en=EXCLUDED.actualizado_en
                     """,
                     [
-                        rut, nombres, apellidos, email, DEFAULT_PHONE, DEFAULT_GENDER,
-                        DEFAULT_BIRTH, str(comuna_id), DEFAULT_ADDRESS, rol,
+                        rut, nombres, apellidos, email, DEFAULT_PHONE,
+                        DEFAULT_BIRTH, str(comuna_id), DEFAULT_ADDRESS,
                         now, now,
                     ],
                 )
 
+        def upsert_historial_genero(rut: str, genero: str):
+            with connection.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO historial_genero_usuario (rut_usuario, id_genero, cambiado_en)
+                    SELECT %s, g.id_genero, %s
+                    FROM genero g
+                    WHERE g.nombre = %s
+                    """,
+                    [rut, now, genero],
+                )
+
+        def upsert_historial_rol(rut: str, rol: str):
+            with connection.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO historial_rol_usuario (rut_usuario, id_rol, cambiado_en)
+                    SELECT %s, r.id_rol, %s
+                    FROM rol r
+                    WHERE r.nombre = %s
+                    """,
+                    [rut, now, rol],
+                )
+
         with transaction.atomic():
-            upsert_usuario("11.111.111-1", "Admin", "ServiHogar", ADMIN_EMAIL, "administrador")
-            upsert_usuario("22.222.222-2", "Verificador", "ServiHogar", VERIF_EMAIL, "verificador")
+            upsert_usuario("11.111.111-1", "Admin", "ServiHogar", ADMIN_EMAIL)
+            upsert_usuario("22.222.222-2", "Verificador", "ServiHogar", VERIF_EMAIL)
+            upsert_historial_genero("11.111.111-1", "no_binario")
+            upsert_historial_genero("22.222.222-2", "no_binario")
+            upsert_historial_rol("11.111.111-1", "administrador")
+            upsert_historial_rol("22.222.222-2", "verificador")
 
         self.stdout.write(self.style.SUCCESS("Cuentas creadas/actualizadas correctamente:"))
         self.stdout.write(f"  - Admin: {ADMIN_EMAIL} / {ADMIN_PASSWORD}")
