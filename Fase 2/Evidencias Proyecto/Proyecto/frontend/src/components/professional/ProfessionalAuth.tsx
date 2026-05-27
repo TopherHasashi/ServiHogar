@@ -21,7 +21,17 @@ import {
   ArrowLeft
 } from "lucide-react"
 
-import { useNavigate } from "react-router-dom"
+interface ProfessionalAuthProps {
+  onLogin: (professional: any) => void
+  onBack: () => void
+}
+
+export default function ProfessionalAuth({ onLogin, onBack }: ProfessionalAuthProps) {
+  const [activeTab, setActiveTab] = useState("login")
+  const [loginForm, setLoginForm] = useState({
+    email: "",
+    password: ""
+  })
   
   const [registerForm, setRegisterForm] = useState({
     firstName: "",
@@ -33,7 +43,7 @@ import { useNavigate } from "react-router-dom"
     confirmPassword: "",
     specialty: "",
     experience: "",
-    region: BIOBIO_REGION_NAME,
+    region: "",
     district: "",
     certifications: [] as string[],
     acceptTerms: false
@@ -67,10 +77,6 @@ import { useNavigate } from "react-router-dom"
     "Región Aysén del General Carlos Ibáñez del Campo": ["Coyhaique", "Lago Verde", "Aysén", "Cisnes", "Guaitecas", "Cochrane", "O'Higgins", "Tortel", "Chile Chico", "Río Ibáñez"],
     "Región de Magallanes y de la Antártica Chilena": ["Punta Arenas", "Laguna Blanca", "Río Verde", "San Gregorio", "Cabo de Hornos", "Antártica", "Porvenir", "Primavera", "Timaukel", "Natales", "Torres del Paine"]
   }
-
-  const availableRegions = Object.keys(regionsAndCommunes).filter(
-    (region) => region === BIOBIO_REGION_NAME
-  )
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault()
@@ -318,13 +324,12 @@ import { useNavigate } from "react-router-dom"
                           <Select 
                             value={registerForm.region} 
                             onValueChange={(value) => setRegisterForm({...registerForm, region: value, district: ""})}
-                            disabled={availableRegions.length === 1}
                           >
                             <SelectTrigger className="pl-10">
                               <SelectValue placeholder="Selecciona tu región" />
                             </SelectTrigger>
                             <SelectContent>
-                              {availableRegions.map((region) => (
+                              {Object.keys(regionsAndCommunes).map((region) => (
                                 <SelectItem key={region} value={region}>
                                   {region}
                                 </SelectItem>
