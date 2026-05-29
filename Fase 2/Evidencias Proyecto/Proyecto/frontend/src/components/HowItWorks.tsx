@@ -5,7 +5,6 @@ import {
   Calendar, 
   UserCheck, 
   Shield,
-  CreditCard,
   CheckCircle,
   Users,
   Award,
@@ -54,23 +53,11 @@ export default function HowItWorks() {
     },
     {
       step: "4",
-      icon: <CreditCard className="w-8 h-8" />,
-      title: "Paga de forma segura",
-      description: "Realiza el pago digitalmente con MercadoPago. Tu dinero queda protegido hasta confirmar el servicio.",
-      details: [
-        "Pago 100% digital con MercadoPago",
-        "Tarjetas, débito y transferencias aceptadas",
-        "Tu dinero protegido hasta confirmación",
-        "Sin manejo de efectivo en ningún momento"
-      ]
-    },
-    {
-      step: "5",
       icon: <CheckCircle className="w-8 h-8 text-green-600" />,
       title: "Confirma y califica",
       description: "Una vez completado el servicio, confirmas tu satisfacción y calificas la experiencia.",
       details: [
-        "Confirma la satisfacción para liberar el pago",
+        "Confirma la satisfacción del servicio recibido",
         "Sistema de reseñas y calificaciones",
         "Historial completo de servicios recibidos",
         "Soporte disponible en horarios de oficina"
@@ -129,14 +116,14 @@ export default function HowItWorks() {
     },
     {
       step: "5",
-      icon: <CreditCard className="w-8 h-8" />,
-      title: "Cobro automático digital",
-      description: "Recibe pagos automáticamente cuando el cliente confirma el servicio. Todo sin manejar efectivo.",
+      icon: <CheckCircle className="w-8 h-8 text-green-600" />,
+      title: "Recibe y gestiona tus trabajos",
+      description: "Gestiona tus solicitudes, completa los servicios y construye tu reputación en la plataforma.",
       details: [
-        "Pagos automáticos vía MercadoPago",
-        "Sin manejo de efectivo jamás",
-        "Transferencia directa a tu cuenta bancaria",
-        "Respaldo legal con contratos digitales"
+        "Historial completo de trabajos realizados",
+        "Calificaciones y reseñas de clientes",
+        "Reputación visible en tu perfil público",
+        "Respaldo digital de todos tus servicios"
       ]
     }
   ]
@@ -146,11 +133,6 @@ export default function HowItWorks() {
       icon: <Shield className="w-12 h-12 text-blue-500" />,
       title: "Verificación rigurosa en 24-48h",
       description: "Todos los profesionales tienen cédula de identidad y certificados verificados antes de trabajar en la plataforma."
-    },
-    {
-      icon: <CreditCard className="w-12 h-12 text-green-600" />,
-      title: "Dinero protegido con MercadoPago",
-      description: "Tu pago queda protegido hasta que confirmes estar satisfecho. Solo entonces se libera al profesional."
     },
     {
       icon: <Smartphone className="w-12 h-12 text-purple-500" />,
@@ -170,10 +152,6 @@ export default function HowItWorks() {
       answer: "Los profesionales suben su cédula de identidad y certificados. Nuestro equipo los verifica en 24-48 horas validando identidad, antecedentes y certificaciones antes de aprobar su perfil."
     },
     {
-      question: "¿Por qué no manejan efectivo?",
-      answer: "Todo es 100% digital por seguridad. Los pagos se procesan con MercadoPago y tu dinero queda protegido hasta que confirmes estar satisfecho con el servicio."
-    },
-    {
       question: "¿Puedo filtrar profesionales por mi ubicación?",
       answer: "Sí, tenemos filtros por región y comuna para toda Chile. También puedes filtrar por calificación, precio, disponibilidad y tipo de servicio específico."
     },
@@ -183,7 +161,7 @@ export default function HowItWorks() {
     },
     {
       question: "¿Qué pasa si tengo un problema con el servicio?",
-      answer: "No confirmes el pago hasta estar satisfecho. Si hay problemas, contacta nuestro soporte en horarios de oficina (Lunes a Viernes 9:00-18:00, Sábados 9:00-14:00)."
+      answer: "Si hay problemas con el servicio, contacta nuestro soporte en horarios de oficina (Lunes a Viernes 9:00-18:00, Sábados 9:00-14:00). También puedes dejar una reseña para informar a la comunidad."
     },
     {
       question: "¿Ofrecen servicios de emergencia 24/7?",
@@ -199,7 +177,7 @@ export default function HowItWorks() {
           <div className="text-center">
             <h1 className="text-3xl lg:text-4xl mb-4">Cómo Funciona Nuestra Plataforma</h1>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              Proceso 100% digital, seguro y transparente con profesionales verificados y pagos protegidos
+              Proceso 100% digital, seguro y transparente con profesionales verificados
             </p>
           </div>
         </div>
@@ -223,7 +201,7 @@ export default function HowItWorks() {
             <div className="text-center mb-12">
               <h2 className="text-3xl lg:text-4xl mb-4">Para Clientes: Encuentra tu Profesional Ideal</h2>
               <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                Busca, filtra, agenda y paga de forma completamente digital con profesionales verificados
+                Busca, filtra y agenda con profesionales verificados de forma completamente digital
               </p>
             </div>
 
@@ -269,7 +247,7 @@ export default function HowItWorks() {
             <div className="text-center mb-12">
               <h2 className="text-3xl lg:text-4xl mb-4">Para Profesionales: Digitaliza tu Trabajo</h2>
               <p className="text-lg text-gray-600 max-w-2xl mx-auto">
-                Veríficate en 24-48 horas y empieza a recibir pagos automáticos sin manejar efectivo
+                Veríficate en 24-48 horas y empieza a recibir clientes sin complicaciones
               </p>
             </div>
 

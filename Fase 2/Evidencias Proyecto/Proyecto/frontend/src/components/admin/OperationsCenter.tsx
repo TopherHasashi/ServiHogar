@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { toast } from 'sonner'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Badge } from "../ui/badge"
 import { Button } from "../ui/button"
@@ -144,10 +145,10 @@ export default function OperationsCenter() {
       await fetchData()
       setShowDialog(false)
       setSelectedRequest(null)
-      alert('Problema resuelto exitosamente')
+      toast.success('Problema resuelto exitosamente')
     } catch (err: any) {
       console.error('Error resolviendo problema:', err)
-      alert('Error resolviendo problema: ' + err.message)
+      toast.error('Error resolviendo problema: ' + err.message)
     } finally {
       setResolving(false)
     }

@@ -1,4 +1,5 @@
 ﻿import { useState } from "react"
+import { toast } from "sonner"
 import { Card, CardContent } from "./ui/card"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
@@ -217,7 +218,7 @@ export default function CustomerReviews({}: CustomerReviewsProps = {}) {
   const handleSubmitReview = (e: React.FormEvent) => {
     e.preventDefault()
     // Aquí se procesaría la reseña
-    alert("¡Gracias por tu reseña! Será visible una vez que sea verificada.")
+    toast.success('¡Gracias por tu reseña! Será visible una vez que sea verificada.')
     setShowAddReview(false)
     setNewReview({
       service: "",

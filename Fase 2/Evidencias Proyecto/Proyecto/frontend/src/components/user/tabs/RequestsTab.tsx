@@ -365,15 +365,7 @@ export default function RequestsTab({
           </AlertDialogHeader>
 
           <div className="space-y-4 py-4">
-            {cancelType === "client" && (
-              <Alert className="border-blue-200 bg-blue-50">
-                <AlertCircle className="h-4 w-4 text-blue-600" />
-                <AlertDescription className="text-blue-800 text-sm">
-                  <strong>Información de reembolso:</strong> Si este servicio fue pagado, 
-                  el reembolso será procesado y emitido en un plazo de 3 a 9 días hábiles.
-                </AlertDescription>
-              </Alert>
-            )}
+
 
             <div className="space-y-2">
               <Label htmlFor="cancel-reason" className="text-sm font-medium">

@@ -60,7 +60,7 @@ Write-Host "== ServiHogar dev helper ==" -ForegroundColor Cyan
 if (-not (Test-Path $python)) {
   Write-Warning "No se encontró el intérprete Python del entorno virtual en $python"
   Write-Host "Crea el venv e instala dependencias:" -ForegroundColor Yellow
-  Write-Host "  py -m venv .venv; .\.venv\Scripts\Activate.ps1; python -m pip install -r requirements.txt" -ForegroundColor DarkGray
+  Write-Host "  py -m venv .venv; .\.venv\Scripts\Activate.ps1; python -m pip install -r backend\requirements.txt" -ForegroundColor DarkGray
   throw "Falta entorno virtual"
 }
 
@@ -92,7 +92,8 @@ if ($null -eq $nodeVersion) {
 
 # Start Django API
 Write-Host "Levantando API Django en http://127.0.0.1:8000 ..." -ForegroundColor Cyan
-Start-Process -FilePath $python -ArgumentList 'manage.py','runserver' -WorkingDirectory $root
+$backend = Join-Path $root 'backend'
+Start-Process -FilePath $python -ArgumentList 'manage.py','runserver' -WorkingDirectory $backend
 
 # Start Vite dev server (if frontend exists and node ok)
 if (Test-Path $frontend) {

@@ -1,6 +1,17 @@
 import { useEffect, useRef, useState } from "react"
 import { useSearchParams } from "react-router-dom"
 import { API_URL, apiPostForm, apiPutAuth } from "../../../lib/api"
+import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../../ui/alert-dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../ui/card"
 import { Button } from "../../ui/button"
 import { Input } from "../../ui/input"
@@ -12,7 +23,6 @@ import { Badge } from "../../ui/badge"
 import { Alert, AlertDescription } from "../../ui/alert"
 import { Switch } from "../../ui/switch"
 import ProfessionalScheduleManagerAdvanced from "../ProfessionalScheduleManagerAdvanced"
-import ProfessionalBankAccounts from "../ProfessionalBankAccounts"
 import { Separator } from "../../ui/separator"
 import { 
   Briefcase,
@@ -77,8 +87,8 @@ export default function ProfessionalTabMultiService({
 }: ProfessionalTabMultiServiceProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   
-  // Leer el subtab desde la URL, o usar "overview" por defecto
-  const subTabFromUrl = searchParams.get('subTab') || 'overview'
+  // Leer el subtab desde la URL, o usar "services" por defecto
+  const subTabFromUrl = searchParams.get('subTab') || 'services'
   const [professionalTab, setProfessionalTab] = useState(subTabFromUrl)
   
   const [showProfessionalForm, setShowProfessionalForm] = useState(false)
@@ -88,6 +98,11 @@ export default function ProfessionalTabMultiService({
   const [editServiceForm, setEditServiceForm] = useState<any>({})
   const [saveError, setSaveError] = useState<string | null>(null)
   const newExpInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Confirm dialog state (replaces window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; resolve: (ok: boolean) => void } | null>(null)
+  const showConfirm = (message: string): Promise<boolean> =>
+    new Promise(resolve => setConfirmDialog({ message, resolve }))
 
   // Categorías de servicios disponibles
   const [serviceCategories, setServiceCategories] = useState<{ id: string; name: string; slug: string }[]>([])
@@ -163,11 +178,11 @@ export default function ProfessionalTabMultiService({
   const handleAddService = async () => {
     if (!userProfessionalProfile) return
     if (!newServiceForm.categoryId || !newServiceForm.description) {
-      alert('Completa categoría y descripción')
+      toast.error('Completa categoría y descripción')
       return
     }
     if (newServiceExperienceFiles.length === 0) {
-      alert('Debes adjuntar al menos un documento de experiencia')
+      toast.error('Debes adjuntar al menos un documento de experiencia')
       return
     }
 
@@ -231,9 +246,9 @@ export default function ProfessionalTabMultiService({
         priceFixed: 25000
       })
       setNewServiceExperienceFiles([])
-      alert('Solicitud enviada al verificador. Te avisaremos cuando se revise.')
+      toast.success('Solicitud enviada al verificador. Te avisaremos cuando se revise.')
     } catch (e: any) {
-      alert(e?.message || 'Error desconocido')
+      toast.error(e?.message || 'Error desconocido')
     }
   }
 
@@ -250,7 +265,7 @@ export default function ProfessionalTabMultiService({
     // Validar que el ID sea un UUID (ruta backend exige <uuid:service_id>)
     const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/
     if (!uuidRegex.test(serviceId)) {
-      alert('Este servicio aún no tiene un ID válido (posible servicio simulado o no aprobado).')
+      toast.error('Este servicio aún no tiene un ID válido (posible servicio simulado o no aprobado).')
       return
     }
     
@@ -286,12 +301,8 @@ export default function ProfessionalTabMultiService({
     
     // Advertencia al DESHABILITAR
     if (target.isActive) {
-      const userConfirmed = window.confirm(
-        "⚠️ Al deshabilitar este servicio:\n\n" +
-        "• Ya no aparecerás en búsquedas públicas\n" +
-        "• Los clientes no podrán hacer nuevas reservas\n" +
-        "• Si tienes reservas futuras activas, debes cancelarlas primero\n\n" +
-        "¿Deseas continuar?"
+      const userConfirmed = await showConfirm(
+        "Al deshabilitar este servicio ya no aparecerás en búsquedas públicas y los clientes no podrán hacer nuevas reservas. Si tienes reservas futuras activas, debes cancelarlas primero. ¿Deseas continuar?"
       )
       
       if (!userConfirmed) {
@@ -354,24 +365,15 @@ export default function ProfessionalTabMultiService({
       
       // Caso especial: reservas activas
       if (errorData?.active_reservations && errorData.active_reservations > 0) {
-        alert(
-          `❌ No se puede deshabilitar el servicio\n\n` +
-          `${errorMsg}\n\n` +
-          `Reservas futuras activas: ${errorData.active_reservations}\n\n` +
-          `💡 Ve a la pestaña "Reservas" para gestionar las reservas pendientes.`
-        )
+        toast.error(`No se puede deshabilitar el servicio: ${errorMsg}. Reservas activas: ${errorData.active_reservations}. Gestiona las reservas pendientes antes de deshabilitarlo.`)
       } 
       // Caso especial: estado no permitido
       else if (errorMsg.toLowerCase().includes('estado')) {
-        alert(
-          `❌ Estado no válido\n\n` +
-          `${errorMsg}\n\n` +
-          `Solo puedes alternar servicios aprobados o suspendidos.`
-        )
+        toast.error(`Estado no válido: ${errorMsg}. Solo puedes alternar servicios aprobados o suspendidos.`)
       }
       // Error genérico
       else {
-        alert(`❌ ${errorMsg}`)
+        toast.error(errorMsg)
       }
       
       console.error('Error al cambiar visibilidad:', e)
@@ -847,7 +849,7 @@ export default function ProfessionalTabMultiService({
                       onChange={(e) => {
                         const f = e.target.files?.[0] || null
                         if (f && f.size > 5 * 1024 * 1024) {
-                          alert('Archivo supera 5MB')
+                          toast.error('Archivo supera 5MB')
                           e.currentTarget.value = ''
                           return
                         }
@@ -893,7 +895,7 @@ export default function ProfessionalTabMultiService({
                         const fl = Array.from(e.target.files || [])
                         const valid = fl.filter(f => f.size <= 5 * 1024 * 1024)
                         if (valid.length !== fl.length) {
-                          alert('Se ignoraron archivos > 5MB')
+                          toast.warning('Se ignoraron archivos > 5MB')
                         }
                         setExperienceFiles(valid)
                       }}
@@ -936,129 +938,13 @@ export default function ProfessionalTabMultiService({
   if (!userProfessionalProfile) return null
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="space-y-6">
       <Tabs value={professionalTab} onValueChange={handleTabChange}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="overview">Resumen</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="services">Servicios</TabsTrigger>
           <TabsTrigger value="schedule">Horarios</TabsTrigger>
-          <TabsTrigger value="bankAccounts">Cuentas</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="overview" className="space-y-6">
-          {/* Perfil General */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Briefcase className="w-5 h-5" />
-                Perfil Profesional
-              </CardTitle>
-              <CardDescription>
-                Información general de tu perfil como profesional
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-sm text-gray-500">Estado General:</span>
-                    <div className="mt-1">
-                      {getVerificationStatusBadge(userProfessionalProfile.generalVerificationStatus)}
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-sm text-gray-500">Calificación Promedio:</span>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                      <span className="font-semibold text-lg">{userProfessionalProfile.averageRating.toFixed(1)}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-sm text-gray-500">Trabajos Completados:</span>
-                    <p className="font-semibold text-lg">{userProfessionalProfile.totalJobs}</p>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div>
-                    <span className="text-sm text-gray-500">Ganancias Totales:</span>
-                    <p className="font-semibold text-lg text-green-600">${userProfessionalProfile.totalEarnings.toLocaleString()}</p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Resumen de Servicios */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Resumen de Servicios</CardTitle>
-              <CardDescription>
-                Vista rápida de todos tus servicios
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4">
-                {userProfessionalProfile.services.map(service => (
-                  <div key={service.id} className="flex items-center justify-between p-4 border rounded-lg">
-                    <div className="flex items-center gap-4">
-                      <Badge variant="secondary">{service.categoryName}</Badge>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium">${service.priceFixed.toLocaleString()}</span>
-                          {service.isActive ? (
-                            <Badge variant="outline" className="text-green-600">
-                              <Eye className="w-3 h-3 mr-1" />
-                              Activo
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-gray-600">
-                              <EyeOff className="w-3 h-3 mr-1" />
-                              Inactivo
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
-                          <span className="flex items-center gap-1">
-                            <Star className="w-3 h-3" />
-                            {service.rating.toFixed(1)}
-                          </span>
-                          <span>{service.completedJobs} trabajos</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <Switch
-                        checked={service.isActive}
-                        onCheckedChange={() => handleToggleServiceActive(service.id)}
-                        disabled={
-                          service.verificationStatus !== 'approved' && 
-                          service.verificationStatus !== 'suspended'
-                        }
-                      />
-                      {service.verificationStatus === 'pending' && (
-                        <span className="text-xs text-amber-600 dark:text-amber-400 text-right">
-                          En verificación
-                        </span>
-                      )}
-                      {service.verificationStatus === 'rejected' && (
-                        <span className="text-xs text-red-600 dark:text-red-400 text-right">
-                          Rechazado
-                        </span>
-                      )}
-                      {(service.verificationStatus === 'approved' || service.verificationStatus === 'suspended') && (
-                        <span className={`text-xs ${service.isActive ? 'text-green-600 dark:text-green-400' : 'text-gray-500'} text-right`}>
-                          {service.isActive ? 'Activo' : 'Suspendido'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="services" className="space-y-6">
           {/* Header con botón agregar */}
@@ -1286,7 +1172,7 @@ export default function ProfessionalTabMultiService({
                           const fl = Array.from(e.target.files || [])
                           const valid = fl.filter(f => f.size <= 5 * 1024 * 1024)
                           if (valid.length !== fl.length) {
-                            alert('Se ignoraron archivos > 5MB')
+                            toast.warning('Se ignoraron archivos > 5MB')
                           }
                           setNewServiceExperienceFiles(valid)
                         }}
@@ -1580,11 +1466,22 @@ export default function ProfessionalTabMultiService({
             professionalServices={userProfessionalProfile.services}
           />
         </TabsContent>
-
-        <TabsContent value="bankAccounts">
-          <ProfessionalBankAccounts />
-        </TabsContent>
       </Tabs>
     </div>
+    {confirmDialog && (
+      <AlertDialog open={true} onOpenChange={() => { confirmDialog.resolve(false); setConfirmDialog(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar acción</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialog.message}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { confirmDialog.resolve(false); setConfirmDialog(null) }}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { confirmDialog.resolve(true); setConfirmDialog(null) }}>Continuar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    )}
+    </>
   )
 }

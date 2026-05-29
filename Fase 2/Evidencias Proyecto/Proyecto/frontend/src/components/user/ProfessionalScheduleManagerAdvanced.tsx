@@ -1,5 +1,16 @@
 import { useState, useMemo, useEffect } from "react"
 import { apiGetAuth, apiPutAuth, apiPost } from "../../lib/api"
+import { toast } from "sonner"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "../ui/alert-dialog"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Button } from "../ui/button"
 import { Input } from "../ui/input"
@@ -107,6 +118,11 @@ export default function ProfessionalScheduleManagerAdvanced({
   const [isSaving, setIsSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [saveError, setSaveError] = useState<{ type: 'conflict' | 'validation' | 'generic', message: string } | null>(null)
+
+  // Confirm dialog state (replaces window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; resolve: (ok: boolean) => void } | null>(null)
+  const showConfirm = (message: string): Promise<boolean> =>
+    new Promise(resolve => setConfirmDialog({ message, resolve }))
   
   // Estados para horarios personalizados por período
   const [showPeriodForm, setShowPeriodForm] = useState(false)
@@ -266,6 +282,38 @@ export default function ProfessionalScheduleManagerAdvanced({
     }
   }, [enabledServices.map(s => s.id).join('|')])
 
+  // Sincronizar serviceSchedules cuando llegan servicios reales desde la API
+  // (el useState inicial solo corre una vez, así que necesitamos este efecto para
+  // agregar servicios con UUID reales sin pisar los que ya tienen horario cargado)
+  useEffect(() => {
+    if (enabledServices.length === 0) return
+    setServiceSchedules(prev => {
+      const updated = { ...prev }
+      let changed = false
+      enabledServices.forEach(service => {
+        if (!updated[service.id]) {
+          updated[service.id] = {
+            serviceId: service.id,
+            serviceName: service.categoryName,
+            weeklyTemplate: {
+              monday: { enabled: false, timeSlots: [] },
+              tuesday: { enabled: false, timeSlots: [] },
+              wednesday: { enabled: false, timeSlots: [] },
+              thursday: { enabled: false, timeSlots: [] },
+              friday: { enabled: false, timeSlots: [] },
+              saturday: { enabled: false, timeSlots: [] },
+              sunday: { enabled: false, timeSlots: [] },
+            },
+            customAvailability: [],
+            customSchedulePeriods: [],
+          }
+          changed = true
+        }
+      })
+      return changed ? updated : prev
+    })
+  }, [enabledServices.map(s => s.id).join('|')])
+
   // Funciones para navegación de meses
   const goToPreviousMonth = () => {
     setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
@@ -345,7 +393,7 @@ export default function ProfessionalScheduleManagerAdvanced({
     dateToCheck.setHours(0, 0, 0, 0)
     
     if (dateToCheck < today) {
-      alert('No puedes marcar días pasados como no disponibles.')
+      toast.error('No puedes marcar días pasados como no disponibles.')
       return
     }
     
@@ -394,7 +442,7 @@ export default function ProfessionalScheduleManagerAdvanced({
     
     // Si no hay fechas válidas (todas son pasadas), mostrar alerta
     if (weekDates.length === 0) {
-      alert('No puedes marcar semanas pasadas como no disponibles.')
+      toast.error('No puedes marcar semanas pasadas como no disponibles.')
       return
     }
     
@@ -511,7 +559,7 @@ export default function ProfessionalScheduleManagerAdvanced({
       .filter(dd => dd >= today && !isBlocked(dd, selectedService))
       .sort((a,b) => a.getTime() - b.getTime())
     if (normalized.length === 0) {
-      alert('No puedes bloquear días en el pasado ni volver a bloquear días ya bloqueados')
+      toast.error('No puedes bloquear días en el pasado ni volver a bloquear días ya bloqueados')
       return
     }
 
@@ -551,7 +599,7 @@ export default function ProfessionalScheduleManagerAdvanced({
           const det = (c.reservations || []).slice(0,3).map(r => `${r.start}-${r.end}${r.client ? ' ' + r.client : ''}`).join('; ')
           return det ? `${head}: ${det}` : head
         }).join(', ')
-        const proceed = window.confirm(`Tienes reservas en: ${list}.\n¿Seguro que quieres marcar estos días como no disponibles?`)
+        const proceed = await showConfirm(`Tienes reservas en: ${list}. ¿Seguro que quieres marcar estos días como no disponibles?`)
         if (!proceed) return
       }
     } catch (e) {
@@ -969,7 +1017,7 @@ export default function ProfessionalScheduleManagerAdvanced({
         const sd = new Date(a.startDate); sd.setHours(0,0,0,0)
         if (sd < today) {
           setIsSaving(false)
-          alert('Hay días no disponibles en el pasado. Ajusta las fechas antes de guardar.')
+          toast.error('Hay días no disponibles en el pasado. Ajusta las fechas antes de guardar.')
           return
         }
       }
@@ -999,7 +1047,7 @@ export default function ProfessionalScheduleManagerAdvanced({
         const conflicts = parsed?.conflicts as Array<{ date: string; count: number }>
         if (Array.isArray(conflicts) && conflicts.length > 0) {
           const list = conflicts.map(c => `${new Date(c.date).toLocaleDateString()} (${c.count})`).join(', ')
-          const ok = window.confirm(`Tienes reservas en: ${list}.\n¿Seguro que quieres bloquear esos días igualmente?`)
+          const ok = await showConfirm(`Tienes reservas en: ${list}. ¿Seguro que quieres bloquear esos días igualmente?`)
           if (!ok) {
             setIsSaving(false)
             return
@@ -1058,6 +1106,7 @@ export default function ProfessionalScheduleManagerAdvanced({
   }
 
   return (
+    <>
     <div className="space-y-6">
       {/* Alertas de éxito y error */}
       {saveSuccess && (
@@ -1764,5 +1813,20 @@ export default function ProfessionalScheduleManagerAdvanced({
         </Button>
       </div>
     </div>
+    {confirmDialog && (
+      <AlertDialog open={true} onOpenChange={() => { confirmDialog.resolve(false); setConfirmDialog(null) }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar acción</AlertDialogTitle>
+            <AlertDialogDescription>{confirmDialog.message}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { confirmDialog.resolve(false); setConfirmDialog(null) }}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { confirmDialog.resolve(true); setConfirmDialog(null) }}>Continuar</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    )}
+    </>
   )
 }

@@ -5,6 +5,10 @@ import { Badge } from "../ui/badge"
 import { ScrollArea } from "../ui/scroll-area"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "../ui/accordion"
 import { Alert, AlertDescription } from "../ui/alert"
+import { Input } from "../ui/input"
+import { Label } from "../ui/label"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../ui/dialog"
+import { toast } from "sonner"
 import { 
   CheckCircle, 
   XCircle, 
@@ -152,32 +156,14 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
       setPendingVerifications(prev => prev.filter(p => p.id !== serviceId))
       setSelectedProfessional(null)
       reloadStats()
-      alert('Servicio aprobado')
+      toast.success('Servicio aprobado')
     } catch (e: any) {
-      alert(e?.message || 'Error')
+      toast.error(e?.message || 'Error')
     }
   }
 
-  const handleReject = async (serviceId: string) => {
-    const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
-    const reason = prompt('Ingresa la razón del rechazo:') || ''
-    try {
-      const r = await fetch(`${API}/api/verifications/service/${serviceId}/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('auth_access') || ''}`,
-        },
-        body: JSON.stringify({ action: 'reject', reason })
-      })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      setPendingVerifications(prev => prev.filter(p => p.id !== serviceId))
-      setSelectedProfessional(null)
-      reloadStats()
-      alert('Servicio rechazado')
-    } catch (e: any) {
-      alert(e?.message || 'Error')
-    }
+  const handleReject = (serviceId: string) => {
+    openRejectDialog(serviceId)
   }
 
   const getDocumentIcon = (type: string) => {
@@ -206,7 +192,41 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
     ? pendingVerifications.find(p => p.id === selectedProfessional)
     : null
 
+  // Reject dialog state
+  const [rejectDialog, setRejectDialog] = useState<{ serviceId: string } | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+
+  const openRejectDialog = (serviceId: string) => {
+    setRejectReason('')
+    setRejectDialog({ serviceId })
+  }
+
+  const confirmReject = async () => {
+    if (!rejectDialog) return
+    const { serviceId } = rejectDialog
+    setRejectDialog(null)
+    const API = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
+    try {
+      const r = await fetch(`${API}/api/verifications/service/${serviceId}/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('auth_access') || ''}`,
+        },
+        body: JSON.stringify({ action: 'reject', reason: rejectReason })
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setPendingVerifications(prev => prev.filter(p => p.id !== serviceId))
+      setSelectedProfessional(null)
+      reloadStats()
+      toast.success('Servicio rechazado')
+    } catch (e: any) {
+      toast.error(e?.message || 'Error')
+    }
+  }
+
   return (
+    <>
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b shadow-sm">
@@ -682,5 +702,27 @@ export default function VerifierDashboard({ onLogout }: VerifierDashboardProps) 
         </div>
       )}
     </div>
+    <Dialog open={!!rejectDialog} onOpenChange={(open) => { if (!open) setRejectDialog(null) }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rechazar servicio</DialogTitle>
+          <DialogDescription>Ingresa la razón del rechazo para notificar al profesional.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2 py-2">
+          <Label htmlFor="reject-reason">Razón del rechazo</Label>
+          <Input
+            id="reject-reason"
+            value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)}
+            placeholder="Describe el motivo del rechazo..."
+          />
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setRejectDialog(null)}>Cancelar</Button>
+          <Button variant="destructive" onClick={confirmReject}>Rechazar</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { toast } from "sonner"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs"
@@ -150,10 +151,10 @@ export default function AdminDashboardBI({ onLogout }: AdminDashboardBIProps) {
       
       await apiPutAuth('/api/admin/config/update/', dataToSend)
       
-      alert('Configuración guardada exitosamente')
+      toast.success('Configuración guardada exitosamente')
     } catch (err: any) {
       console.error('Error guardando configuración:', err)
-      alert('Error guardando configuración: ' + err.message)
+      toast.error('Error guardando configuración: ' + err.message)
     } finally {
       setSavingConfig(false)
     }

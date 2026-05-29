@@ -27,6 +27,7 @@ export default function AllServices({ onServiceSelect }: AllServicesProps) {
   const [selectedService, setSelectedService] = useState("")
   const [selectedRegion, setSelectedRegion] = useState(BIOBIO_REGION_NAME)
   const [selectedCommune, setSelectedCommune] = useState("")
+  const [communes, setCommunes] = useState<string[]>([])
   const [priceRange, setPriceRange] = useState("")
   const [rating, setRating] = useState("")
   const [selectedGender, setSelectedGender] = useState("")
@@ -54,34 +55,23 @@ export default function AllServices({ onServiceSelect }: AllServicesProps) {
     { id: "jardineria", name: "Jardinería", icon: Scissors }
   ] */
 
-  // Regiones de Chile con comunas principales
-  const regionsAndCommunes = {
-    "Región Metropolitana": ["Santiago", "Las Condes", "Providencia", "Ñuñoa", "La Reina", "Vitacura", "San Miguel", "Maipú", "Puente Alto", "San Bernardo"],
-    "Región de Valparaíso": ["Valparaíso", "Viña del Mar", "Quilpué", "Villa Alemana", "Concón", "San Antonio"],
-    "Región del Biobío": ["Concepción", "Talcahuano", "Chillán", "Los Ángeles", "Coronel"],
-    "Región de la Araucanía": ["Temuco", "Villarrica", "Pucón", "Angol"],
-    "Región de Los Lagos": ["Puerto Montt", "Osorno", "Valdivia", "Castro"],
-    "Región de Antofagasta": ["Antofagasta", "Calama", "Tocopilla"],
-    "Región de Atacama": ["Copiapó", "Vallenar"],
-    "Región de Coquimbo": ["La Serena", "Coquimbo", "Ovalle"],
-    "Región del Libertador": ["Rancagua", "San Fernando", "Rengo"],
-    "Región del Maule": ["Talca", "Curicó", "Linares"],
-    "Región de Aysén": ["Coyhaique", "Puerto Aysén"],
-    "Región de Magallanes": ["Punta Arenas", "Puerto Natales"],
-    "Región de Arica y Parinacota": ["Arica", "Putre"],
-    "Región de Tarapacá": ["Iquique", "Alto Hospicio"],
-    "Región de Ñuble": ["Chillán", "San Carlos"]
-  }
-
-  const availableRegions = Object.keys(regionsAndCommunes).filter(
-    (region) => region === BIOBIO_REGION_NAME
-  )
-
-  // Obtener comunas basadas en la región seleccionada
-  const getAvailableCommunes = () => {
-    if (!selectedRegion || selectedRegion === "all") return []
-    return regionsAndCommunes[selectedRegion as keyof typeof regionsAndCommunes] || []
-  }
+  // Cargar comunas de Biobío desde la API
+  useEffect(() => {
+    const fetchCommunes = async () => {
+      try {
+        const regions: any[] = await apiGet("/api/geo/regiones/")
+        const biobio = regions.find((r) =>
+          r.nombre?.toLowerCase().includes("biob") || r.codigo === "VIII"
+        )
+        if (!biobio) return
+        const comunas: any[] = await apiGet(`/api/geo/comunas/?region_id=${biobio.id}`)
+        setCommunes(comunas.map((c: any) => c.nombre).sort((a, b) => a.localeCompare(b, "es")))
+      } catch (e) {
+        console.error("Failed to load communes", e)
+      }
+    }
+    fetchCommunes()
+  }, [])
 
   // Cargar servicios reales desde API
   useEffect(() => {
@@ -208,16 +198,14 @@ export default function AllServices({ onServiceSelect }: AllServicesProps) {
                 {/* Filtro por Región */}
                 <div className="space-y-2">
                   <Label>Región</Label>
-                  <Select value={selectedRegion} onValueChange={handleRegionChange}>
+                  <Select value={selectedRegion} onValueChange={handleRegionChange} disabled>
                     <SelectTrigger className="bg-white">
                       <SelectValue placeholder={BIOBIO_REGION_NAME} />
                     </SelectTrigger>
                     <SelectContent className="bg-white border shadow-lg max-h-60 overflow-y-auto">
-                      {availableRegions.map((region) => (
-                        <SelectItem key={region} value={region} className="hover:bg-gray-100 focus:bg-gray-100">
-                          {region}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value={BIOBIO_REGION_NAME} className="hover:bg-gray-100 focus:bg-gray-100">
+                        {BIOBIO_REGION_NAME}
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -235,7 +223,7 @@ export default function AllServices({ onServiceSelect }: AllServicesProps) {
                     </SelectTrigger>
                     <SelectContent className="bg-white border shadow-lg max-h-60 overflow-y-auto">
                       <SelectItem value="all" className="hover:bg-gray-100 focus:bg-gray-100">Todas las comunas</SelectItem>
-                      {getAvailableCommunes().map((commune) => (
+                      {communes.map((commune) => (
                         <SelectItem key={commune} value={commune} className="hover:bg-gray-100 focus:bg-gray-100">
                           {commune}
                         </SelectItem>

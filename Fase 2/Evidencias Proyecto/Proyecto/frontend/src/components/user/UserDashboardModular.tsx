@@ -8,6 +8,7 @@ import RequestsTab from "./tabs/RequestsTab"
 import ProfileTab from "./tabs/ProfileTab"
 import ProfessionalTabMultiService from "./tabs/ProfessionalTabMultiService"
 import { apiGetAuth, apiPost, apiPostForm } from "../../lib/api"
+import { toast } from "sonner"
 import { 
   User, 
   LogOut, 
@@ -109,7 +110,7 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
       setProfessionalBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'Confirmado' } : b))
     } catch (e) {
       console.error('No se pudo confirmar la solicitud', e)
-      alert('No se pudo confirmar la solicitud. Intenta nuevamente.')
+      toast.error('No se pudo confirmar la solicitud. Intenta nuevamente.')
     }
   }
 
@@ -120,7 +121,7 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
     } catch (e: any) {
       console.error('No se pudo cancelar la solicitud', e)
       const errorMsg = e?.response?.data?.message || 'No se pudo cancelar la solicitud. Intenta nuevamente.'
-      alert(errorMsg)
+      toast.error(errorMsg)
     }
   }
 
@@ -132,7 +133,7 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
     } catch (e: any) {
       console.error('No se pudo cancelar la solicitud (cliente)', e)
       const errorMsg = e?.response?.data?.message || 'No se pudo cancelar la solicitud. Intenta nuevamente.'
-      alert(errorMsg)
+      toast.error(errorMsg)
     }
   }
 
@@ -141,48 +142,14 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
     user.isProfessional ? {
       id: "profile-001",
       userId: user.id,
-      generalDescription: "Profesional experimentado en servicios del hogar con múltiples especialidades.",
+      generalDescription: "",
       generalVerificationStatus: "approved" as const,
-      averageRating: 4.6,
-      totalJobs: 78,
-      totalEarnings: 1560000,
+      averageRating: 0,
+      totalJobs: 0,
+      totalEarnings: 0,
       isActive: true,
       acceptsNewJobs: true,
-      services: [
-        {
-          id: "service-001",
-          categoryId: "gasfiteria",
-          categoryName: "Gasfitería",
-          experience: "4",
-          description: "Especialista en instalaciones y reparaciones de cañerías, grifería y calefont.",
-          durationType: "range" as const,
-          minDuration: 60,
-          maxDuration: 240,
-          priceFixed: 28000,
-          isActive: true,
-          isAvailable: true,
-          verificationStatus: "approved" as const,
-          rating: 4.7,
-          completedJobs: 45,
-          totalEarnings: 1260000
-        },
-        {
-          id: "service-002",
-          categoryId: "limpieza",
-          categoryName: "Limpieza del Hogar",
-          experience: "2",
-          description: "Limpieza profunda y mantención regular de hogares y oficinas.",
-          durationType: "fixed" as const,
-          fixedDuration: 180,
-          priceFixed: 22000,
-          isActive: true,
-          isAvailable: true,
-          verificationStatus: "pending" as const,
-          rating: 4.5,
-          completedJobs: 33,
-          totalEarnings: 726000
-        }
-      ]
+      services: [] as any[]
     } : null
   )
 
@@ -217,8 +184,8 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
           isAvailable: s.estado_verificacion === 'aprobado',
           verificationStatus: normalizeStatus(s.estado_verificacion),
           razon_rechazo: s.razon_rechazo,
-          rating: 0,
-          completedJobs: 0,
+          rating: typeof s.calificacion_promedio === 'number' ? s.calificacion_promedio : 0,
+          completedJobs: typeof s.completados === 'number' ? s.completados : 0,
           totalEarnings: 0,
         }))
         const estadoRaw: string | null = data.estado_general || null
@@ -257,7 +224,8 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
           setUserProfessionalProfile(null)
           setRejectionReason(null)
         }
-      } catch {
+      } catch (err) {
+        console.error('[my/services] Error al cargar perfil profesional:', err)
         // Si 400 (no tiene usuario en dominio) o 401, ignorar
       }
     })()
@@ -282,7 +250,7 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
       // Proceso completado exitosamente - sin mensaje emergente
     } catch (e: any) {
       console.error('Error al marcar como completado:', e)
-      alert(e.message || 'No se pudo marcar como completado. Intenta nuevamente.')
+      toast.error(e.message || 'No se pudo marcar como completado. Intenta nuevamente.')
     }
   }
 
@@ -308,7 +276,7 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
         )
       )
     } catch (e: any) {
-      alert(e?.message || 'No se pudo enviar la reseña. Intenta nuevamente.')
+      toast.error(e?.message || 'No se pudo enviar la reseña. Intenta nuevamente.')
     }
   }
 
@@ -365,7 +333,7 @@ export default function UserDashboard({ user, onLogout }: UserDashboardProps) {
       setUserProfessionalProfile(null)
       if (activeTab !== 'professional') setActiveTab('professional')
     } catch (e: any) {
-      alert(e?.message || 'Error desconocido')
+      toast.error(e?.message || 'Error desconocido')
     }
   }
 

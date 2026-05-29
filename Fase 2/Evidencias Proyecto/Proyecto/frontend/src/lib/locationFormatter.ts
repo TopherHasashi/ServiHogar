@@ -65,6 +65,12 @@ export function formatLocationName(name: string | null | undefined): string {
     return locationNameCorrections[lowerName];
   }
 
-  // Si no está en el diccionario, lo capitalizamos por defecto (P. ej: "hola" -> "Hola")
-  return lowerName.replace(/\b\w/g, (char) => char.toUpperCase());
+  // Intenta sin tildes (ej: "concepción" → "concepcion" para buscar en el diccionario)
+  const normalized = lowerName.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (locationNameCorrections[normalized]) {
+    return locationNameCorrections[normalized];
+  }
+
+  // Fallback: capitaliza solo después de espacio o al inicio (no después de caracteres acentuados)
+  return lowerName.replace(/(^|\s)\S/g, (char) => char.toUpperCase());
 }

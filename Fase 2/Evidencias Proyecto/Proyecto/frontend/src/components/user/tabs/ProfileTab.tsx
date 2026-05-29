@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 import { apiGet, apiPutAuth, apiPostForm } from "../../../lib/api"
 import { useAuth } from "../../../lib/auth"
+import { toast } from "sonner"
 
 interface ProfileTabProps {
   user: any
@@ -157,9 +158,9 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
     try {
       await apiPostForm('/api/auth/me/avatar/', fd, { auth: true })
       await refreshUser()
-      alert('Avatar actualizado')
+      toast.success('Avatar actualizado')
     } catch (err: any) {
-      alert(err?.message || 'Error')
+      toast.error(err?.message || 'Error')
     }
   }
 
@@ -184,9 +185,9 @@ export default function ProfileTab({ user, onUpdateUser }: ProfileTabProps) {
       onUpdateUser?.(payload)
       setEditingProfile(false)
       setTempUserData({})
-      alert('Perfil actualizado correctamente')
+      toast.success('Perfil actualizado correctamente')
     } catch (e: any) {
-      alert(e?.message || 'Error desconocido')
+      toast.error(e?.message || 'Error desconocido')
     }
   }
 
